@@ -324,6 +324,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     hass.services.async_register(DOMAIN, "stop_gif_rotation", async_stop_gif_rotation)
 
+    async def async_send_image(call):
+        """Send a pre-rendered PNG directly to the display."""
+        from .client.modules.image import Image as IDMImage
+        image_path = call.data.get("image_path")
+        if not image_path:
+            _LOGGER.error("send_image: image_path is required")
+            return
+        await IDMImage().setMode(1)
+        await IDMImage().uploadUnprocessed(image_path)
+
+    hass.services.async_register(DOMAIN, "send_image", async_send_image)
+
     return True
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
