@@ -362,6 +362,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.services.async_register(DOMAIN, "screen_off", async_screen_off)
     hass.services.async_register(DOMAIN, "screen_on", async_screen_on)
 
+    async def async_refresh(call):
+        """Immediately re-render and push the current display mode to the device."""
+        for entry_id, coordinator in hass.data[DOMAIN].items():
+            if isinstance(coordinator, IDotMatrixCoordinator):
+                await coordinator.async_update_device()
+
+    hass.services.async_register(DOMAIN, "refresh", async_refresh)
+
     return True
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -370,6 +378,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if coordinator:
         if hasattr(coordinator, "_clear_face_tracking"):
             coordinator._clear_face_tracking()
+        if hasattr(coordinator, "_cancel_moon_timer"):
+            coordinator._cancel_moon_timer()
         if hasattr(coordinator, "async_stop_gif_rotation"):
             await coordinator.async_stop_gif_rotation()
     if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):

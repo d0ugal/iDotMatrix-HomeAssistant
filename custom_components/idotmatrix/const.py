@@ -18,9 +18,11 @@ CONF_DISPLAY_MODE = "display_mode"
 DISPLAY_MODE_TEXT = "text"
 DISPLAY_MODE_DESIGN = "design"
 DISPLAY_MODE_EXTERNAL = "external"  # display managed externally; coordinator skips updates
+DISPLAY_MODE_MOON = "moon"          # moon phase renderer built into coordinator
 DISPLAY_MODE_OPTIONS = {
     DISPLAY_MODE_TEXT: "Display Text Field",
     DISPLAY_MODE_DESIGN: "Display design from the Card",
+    DISPLAY_MODE_MOON: "Moon Phase",
 }
 LAYER_TYPE_TEXT = "text"
 LAYER_TYPE_IMAGE = "image"

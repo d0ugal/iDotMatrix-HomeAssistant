@@ -21,7 +21,8 @@
     "requirements": [
         "bleak",
         "Pillow",
-        "bleak-retry-connector"
+        "bleak-retry-connector",
+        "ephem"
     ],
     "version": "1.0.0"
 }

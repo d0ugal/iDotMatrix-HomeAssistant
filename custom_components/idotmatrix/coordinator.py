@@ -14,7 +14,7 @@ from homeassistant.helpers.update_coordinator import (
 )
 from homeassistant.helpers.event import async_track_state_change_event
 
-from .const import DOMAIN, CONF_DISPLAY_MODE, DISPLAY_MODE_DESIGN, DISPLAY_MODE_TEXT, DISPLAY_MODE_EXTERNAL
+from .const import DOMAIN, CONF_DISPLAY_MODE, DISPLAY_MODE_DESIGN, DISPLAY_MODE_TEXT, DISPLAY_MODE_EXTERNAL, DISPLAY_MODE_MOON
 from .client.connectionManager import ConnectionManager
 from bleak.exc import BleakError
 from .client.modules.text import Text
@@ -76,6 +76,9 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
         # GIF rotation tracking
         self._gif_rotation_task: asyncio.Task | None = None
         self._gif_rotation_stop = asyncio.Event()
+
+        # Moon mode timer
+        self._moon_timer_unsub = None
 
         # Shared settings for Text entity
         self.text_settings = {
@@ -177,6 +180,27 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
             self._apply_face_tracking({"layers": self.text_settings.get("layers", [])})
         else:
             self._clear_face_tracking()
+        if mode == DISPLAY_MODE_MOON:
+            self._setup_moon_timer()
+        else:
+            self._cancel_moon_timer()
+
+    def _setup_moon_timer(self) -> None:
+        """Start a 5-minute periodic timer to re-render the moon image."""
+        from homeassistant.helpers.event import async_track_time_interval
+        self._cancel_moon_timer()
+        self._moon_timer_unsub = async_track_time_interval(
+            self.hass, self._moon_timer_callback, timedelta(minutes=5)
+        )
+
+    def _cancel_moon_timer(self) -> None:
+        if self._moon_timer_unsub:
+            self._moon_timer_unsub()
+            self._moon_timer_unsub = None
+
+    async def _moon_timer_callback(self, now) -> None:
+        if self.display_mode == DISPLAY_MODE_MOON:
+            await self.async_update_device()
 
     @callback
     def _on_entity_state_change(self, event: Event) -> None:
@@ -567,6 +591,8 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
         if (data := await self._store.async_load()):
             _LOGGER.debug(f"Loaded persist settings: {data}")
             self.text_settings.update(data)
+        if self.display_mode == DISPLAY_MODE_MOON:
+            self._setup_moon_timer()
 
     async def async_save_settings(self) -> None:
         """Save settings to storage."""
@@ -579,6 +605,10 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
     async def async_update_device(self) -> None:
         """Send current configuration to the device."""
         if self.display_mode == DISPLAY_MODE_EXTERNAL:
+            return
+
+        if self.display_mode == DISPLAY_MODE_MOON:
+            await self._render_and_upload_moon()
             return
 
         text = self.text_settings.get("current_text", "")
@@ -646,6 +676,39 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
         
         # Save persistence
         await self.async_save_settings()
+
+    async def _render_and_upload_moon(self) -> None:
+        """Render the moon phase image and upload it to the device."""
+        import tempfile
+        from .moon import render_image
+
+        lat = str(self.hass.config.latitude)
+        lon = str(self.hass.config.longitude)
+        elev = int(self.hass.config.elevation or 0)
+
+        aurora_state = self.hass.states.get("sensor.aurora_status")
+        aurora_active = aurora_state is not None and aurora_state.state in ("yellow", "amber", "red")
+
+        def do_render():
+            return render_image(lat, lon, elev, aurora_active)
+
+        try:
+            image = await self.hass.async_add_executor_job(do_render)
+
+            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+                tmp_path = tmp.name
+            await self.hass.async_add_executor_job(image.save, tmp_path)
+
+            try:
+                await IDMImage().setMode(1)
+                await IDMImage().uploadUnprocessed(tmp_path)
+            finally:
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+
+            _LOGGER.debug("Moon image rendered and uploaded")
+        except Exception as e:
+            _LOGGER.error("Failed to render moon image: %s", e)
 
     async def _set_multiline_text(self, text: str, settings: dict) -> None:
         """Generate an image from text and upload it."""
