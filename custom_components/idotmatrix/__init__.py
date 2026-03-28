@@ -327,6 +327,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     async def async_send_image(call):
         """Send a pre-rendered PNG directly to the display."""
         from .client.modules.image import Image as IDMImage
+        from .const import DISPLAY_MODE_EXTERNAL
         image_path = call.data.get("image_path")
         if not image_path:
             _LOGGER.error("send_image: image_path is required")
@@ -339,6 +340,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         result = await IDMImage().uploadUnprocessed(image_path)
         if result:
             _LOGGER.info("send_image: upload complete")
+            # Prevent the coordinator from overwriting the image with clock mode.
+            for entry_id, coordinator in hass.data[DOMAIN].items():
+                if isinstance(coordinator, IDotMatrixCoordinator):
+                    coordinator.display_mode = DISPLAY_MODE_EXTERNAL
         else:
             _LOGGER.error("send_image: upload failed")
 

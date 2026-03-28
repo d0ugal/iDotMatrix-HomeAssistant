@@ -14,7 +14,7 @@ from homeassistant.helpers.update_coordinator import (
 )
 from homeassistant.helpers.event import async_track_state_change_event
 
-from .const import DOMAIN, CONF_DISPLAY_MODE, DISPLAY_MODE_DESIGN, DISPLAY_MODE_TEXT
+from .const import DOMAIN, CONF_DISPLAY_MODE, DISPLAY_MODE_DESIGN, DISPLAY_MODE_TEXT, DISPLAY_MODE_EXTERNAL
 from .client.connectionManager import ConnectionManager
 from bleak.exc import BleakError
 from .client.modules.text import Text
@@ -578,6 +578,9 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
 
     async def async_update_device(self) -> None:
         """Send current configuration to the device."""
+        if self.display_mode == DISPLAY_MODE_EXTERNAL:
+            return
+
         text = self.text_settings.get("current_text", "")
         settings = self.text_settings
 
