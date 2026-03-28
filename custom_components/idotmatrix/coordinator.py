@@ -686,11 +686,8 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
         lon = str(self.hass.config.longitude)
         elev = int(self.hass.config.elevation or 0)
 
-        aurora_state = self.hass.states.get("sensor.aurora_status")
-        aurora_active = aurora_state is not None and aurora_state.state in ("yellow", "amber", "red")
-
         def do_render():
-            return render_image(lat, lon, elev, aurora_active)
+            return render_image(lat, lon, elev)
 
         try:
             image = await self.hass.async_add_executor_job(do_render)

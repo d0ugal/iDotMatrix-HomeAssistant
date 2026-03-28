@@ -141,9 +141,7 @@ def _arc_diff(a, b):
     return min(d, 360 - d)
 
 
-def _ring_colour(alt, aurora_active):
-    if aurora_active:
-        return (0, 160, 60)
+def _ring_colour(alt):
     horizon_dist = abs(alt)
     if horizon_dist < HORIZON_GLOW_DEG:
         t = horizon_dist / HORIZON_GLOW_DEG
@@ -157,15 +155,14 @@ def _ring_colour(alt, aurora_active):
 # ── Public render function ─────────────────────────────────────────────────────
 
 
-def render_image(lat: str, lon: str, elev: int, aurora_active: bool = False) -> Image.Image:
+def render_image(lat: str, lon: str, elev: int) -> Image.Image:
     """Render a 64×64 moon phase image and return it as a PIL Image.
 
     This function is blocking (uses ephem) and must be called in an executor.
     """
     data = observe(lat, lon, elev)
 
-    bg = (0, 12, 5) if aurora_active else BG
-    img = Image.new("RGB", (SIZE, SIZE), bg)
+    img = Image.new("RGB", (SIZE, SIZE), BG)
     pix = img.load()
 
     rotation = data["rotation"]
@@ -179,7 +176,7 @@ def render_image(lat: str, lon: str, elev: int, aurora_active: bool = False) -> 
                 )
 
     alt = data["alt"]
-    ring_col = _ring_colour(alt, aurora_active)
+    ring_col = _ring_colour(alt)
 
     if alt > 0:
         MAX_ARC_PX = 10
@@ -193,13 +190,9 @@ def render_image(lat: str, lon: str, elev: int, aurora_active: bool = False) -> 
             az = (360.0 - az) % 360.0
         closest = min(perimeter, key=lambda p: _arc_diff(_pixel_angle(p[0], p[1]), az))
         for rx, ry in perimeter:
-            diff = _arc_diff(_pixel_angle(rx, ry), az)
-            if aurora_active or diff <= half_span:
+            if _arc_diff(_pixel_angle(rx, ry), az) <= half_span:
                 pix[rx, ry] = ring_col
-        if aurora_active:
-            pix[closest[0], closest[1]] = (80, 255, 120)
-        else:
-            pix[closest[0], closest[1]] = (120, 70, 30)
+        pix[closest[0], closest[1]] = (120, 70, 30)
     else:
         fraction = data["rise_fraction"] or 0.0
         bar_height = max(1, round(fraction * SIZE))
