@@ -336,6 +336,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     hass.services.async_register(DOMAIN, "send_image", async_send_image)
 
+    async def async_screen_off(call):
+        """Turn the display off."""
+        from .client.modules.common import Common
+        await Common().screenOff()
+
+    async def async_screen_on(call):
+        """Turn the display on."""
+        from .client.modules.common import Common
+        await Common().screenOn()
+
+    hass.services.async_register(DOMAIN, "screen_off", async_screen_off)
+    hass.services.async_register(DOMAIN, "screen_on", async_screen_on)
+
     return True
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
