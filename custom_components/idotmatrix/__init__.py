@@ -331,8 +331,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if not image_path:
             _LOGGER.error("send_image: image_path is required")
             return
-        await IDMImage().setMode(1)
-        await IDMImage().uploadUnprocessed(image_path)
+        _LOGGER.info("send_image: uploading %s", image_path)
+        mode_ok = await IDMImage().setMode(1)
+        if not mode_ok:
+            _LOGGER.error("send_image: failed to enter image mode")
+            return
+        result = await IDMImage().uploadUnprocessed(image_path)
+        if result:
+            _LOGGER.info("send_image: upload complete")
+        else:
+            _LOGGER.error("send_image: upload failed")
 
     hass.services.async_register(DOMAIN, "send_image", async_send_image)
 

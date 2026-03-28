@@ -138,6 +138,9 @@ class ConnectionManager(metaclass=SingletonMeta):
                 await asyncio.sleep(0.025)
 
             return True
+        else:
+            self.logging.error("send: not connected to device (client=%s, is_connected=%s)", self.client, self.client.is_connected if self.client else "N/A")
+            return False
 
     async def read(self) -> bytes:
         if self.client and self.client.is_connected:
