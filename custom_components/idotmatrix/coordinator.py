@@ -703,7 +703,7 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
                 if os.path.exists(tmp_path):
                     os.remove(tmp_path)
 
-            _LOGGER.debug("Moon image rendered and uploaded")
+            _LOGGER.info("Moon image rendered and uploaded")
         except Exception as e:
             _LOGGER.error("Failed to render moon image: %s", e)
 
