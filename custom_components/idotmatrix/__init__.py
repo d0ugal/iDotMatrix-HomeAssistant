@@ -16,7 +16,7 @@ from .client.connectionManager import ConnectionManager
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS: list[Platform] = [Platform.TEXT, Platform.SELECT, Platform.BUTTON, Platform.NUMBER, Platform.SWITCH, Platform.LIGHT]
+PLATFORMS: list[Platform] = [Platform.TEXT, Platform.SELECT, Platform.BUTTON, Platform.NUMBER, Platform.SWITCH, Platform.LIGHT, Platform.SENSOR]
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 _CARD_URL_PATH = "/idotmatrix"
 _CARD_FILENAME = "idotmatrix-card.js"
@@ -353,11 +353,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         """Turn the display off."""
         from .client.modules.common import Common
         await Common().screenOff()
+        for entry_id, coordinator in hass.data[DOMAIN].items():
+            if isinstance(coordinator, IDotMatrixCoordinator):
+                coordinator.screen_on = False
+                coordinator.async_set_updated_data(coordinator.data)
 
     async def async_screen_on(call):
         """Turn the display on."""
         from .client.modules.common import Common
         await Common().screenOn()
+        for entry_id, coordinator in hass.data[DOMAIN].items():
+            if isinstance(coordinator, IDotMatrixCoordinator):
+                coordinator.screen_on = True
+                coordinator.async_set_updated_data(coordinator.data)
 
     hass.services.async_register(DOMAIN, "screen_off", async_screen_off)
     hass.services.async_register(DOMAIN, "screen_on", async_screen_on)

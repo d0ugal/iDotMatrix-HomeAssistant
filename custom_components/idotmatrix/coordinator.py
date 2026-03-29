@@ -80,6 +80,10 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
         # Moon mode timer
         self._moon_timer_unsub = None
 
+        # Display state tracking
+        self.screen_on: bool = True
+        self.last_render_time: str | None = None
+
         # Shared settings for Text entity
         self.text_settings = {
             "current_text": "",   # The actual text content
@@ -705,6 +709,8 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
                 if os.path.exists(tmp_path):
                     os.remove(tmp_path)
 
+            self.last_render_time = dt_util.now().isoformat()
+            self.async_set_updated_data(self.data)
             _LOGGER.info("Moon image rendered and uploaded")
         except Exception as e:
             _LOGGER.error("Failed to render moon image: %s", e)
