@@ -42,6 +42,29 @@ to Moon Phase to resume normal rendering.
 
 ---
 
+## How the display protocol works
+
+The device has two distinct upload modes with very different persistence behaviour:
+
+**Raw image** (`setMode(1)` + raw RGB data)
+Puts the device into a DIY drawing mode. The image lives in a volatile buffer tied
+to the active BLE session. When BLE disconnects, the device exits that mode and the
+display goes blank. This is why repeatedly re-uploading every 30 seconds was needed
+as a workaround — the image had to be re-sent before the ESPHome proxy timed out
+the connection (~55 seconds of inactivity).
+
+**GIF upload**
+The device has an internal GIF cache indexed by CRC32. Uploaded GIFs are stored
+persistently and replayed from device memory — BLE does not need to stay connected.
+This is also why the built-in clock mode survives disconnects; it is a native device
+mode running independently of BLE.
+
+**Conclusion:** Always upload as a single-frame GIF for any static image that needs
+to persist. The moon renderer now does this, which is why a 5-minute refresh interval
+is sufficient.
+
+---
+
 ## Common failure modes
 
 ### Display goes blank after HA restart
