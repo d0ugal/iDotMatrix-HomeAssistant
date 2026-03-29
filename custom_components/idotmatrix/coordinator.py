@@ -703,8 +703,14 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
             await self.hass.async_add_executor_job(image.save, tmp_path)
 
             try:
-                await IDMImage().setMode(1)
-                await IDMImage().uploadUnprocessed(tmp_path)
+                mode_ok = await IDMImage().setMode(1)
+                if not mode_ok:
+                    _LOGGER.error("Moon render: failed to enter image mode")
+                    return
+                upload_ok = await IDMImage().uploadUnprocessed(tmp_path)
+                if not upload_ok:
+                    _LOGGER.error("Moon render: upload returned failure")
+                    return
             finally:
                 if os.path.exists(tmp_path):
                     os.remove(tmp_path)
