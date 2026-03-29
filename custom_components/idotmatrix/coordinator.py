@@ -194,7 +194,7 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
         from homeassistant.helpers.event import async_track_time_interval
         self._cancel_moon_timer()
         self._moon_timer_unsub = async_track_time_interval(
-            self.hass, self._moon_timer_callback, timedelta(seconds=30)
+            self.hass, self._moon_timer_callback, timedelta(minutes=5)
         )
 
     def _cancel_moon_timer(self) -> None:
