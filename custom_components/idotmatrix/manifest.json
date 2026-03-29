@@ -19,10 +19,10 @@
     "iot_class": "local_polling",
     "issue_tracker": "https://github.com/tukies/iDotMatrix-HomeAssistant/issues",
     "requirements": [
-        "bleak",
-        "Pillow",
-        "bleak-retry-connector",
-        "ephem"
+        "bleak==2.1.1",
+        "Pillow==12.1.1",
+        "bleak-retry-connector==4.4.3",
+        "ephem==4.1.6"
     ],
     "version": "1.0.0"
 }

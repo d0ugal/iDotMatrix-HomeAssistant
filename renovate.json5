@@ -1,0 +1,21 @@
+{
+  $schema: 'https://docs.renovatebot.com/renovate-schema.json',
+  extends: [
+    'config:recommended',
+  ],
+  forkProcessing: 'enabled',
+  automerge: true,
+  timezone: 'Europe/London',
+  customManagers: [
+    {
+      customType: 'regex',
+      managerFilePatterns: [
+        '/custom_components/idotmatrix/manifest.json/',
+      ],
+      matchStrings: [
+        '"(?<depName>[a-zA-Z0-9_-]+)==(?<currentValue>[^"]+)"',
+      ],
+      datasourceTemplate: 'pypi',
+    },
+  ],
+}
