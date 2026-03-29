@@ -593,6 +593,7 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
             self.text_settings.update(data)
         if self.display_mode == DISPLAY_MODE_MOON:
             self._setup_moon_timer()
+            await self.async_update_device()
 
     async def async_save_settings(self) -> None:
         """Save settings to storage."""
@@ -685,6 +686,7 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
         lat = str(self.hass.config.latitude)
         lon = str(self.hass.config.longitude)
         elev = int(self.hass.config.elevation or 0)
+        _LOGGER.info("Moon render: lat=%s lon=%s elev=%s", lat, lon, elev)
 
         def do_render():
             return render_image(lat, lon, elev)
