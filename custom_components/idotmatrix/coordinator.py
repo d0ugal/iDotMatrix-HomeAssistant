@@ -683,8 +683,9 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
         await self.async_save_settings()
 
     async def _render_and_upload_moon(self) -> None:
-        """Render the moon phase image and upload it to the device."""
+        """Render the moon phase image and upload it to the device as a GIF."""
         import tempfile
+        import io
         from .moon import render_image
 
         lat = str(self.hass.config.latitude)
@@ -692,24 +693,24 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
         elev = int(self.hass.config.elevation or 0)
         _LOGGER.info("Moon render: lat=%s lon=%s elev=%s", lat, lon, elev)
 
-        def do_render():
-            return render_image(lat, lon, elev)
+        def do_render_gif():
+            img = render_image(lat, lon, elev)
+            gif_img = img.quantize(colors=256)
+            buf = io.BytesIO()
+            gif_img.save(buf, format="GIF", loop=0, disposal=2)
+            return buf.getvalue()
 
         try:
-            image = await self.hass.async_add_executor_job(do_render)
+            gif_data = await self.hass.async_add_executor_job(do_render_gif)
 
-            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+            with tempfile.NamedTemporaryFile(suffix=".gif", delete=False) as tmp:
+                tmp.write(gif_data)
                 tmp_path = tmp.name
-            await self.hass.async_add_executor_job(image.save, tmp_path)
 
             try:
-                mode_ok = await IDMImage().setMode(1)
-                if not mode_ok:
-                    _LOGGER.error("Moon render: failed to enter image mode")
-                    return
-                upload_ok = await IDMImage().uploadUnprocessed(tmp_path)
+                upload_ok = await IDMGif().uploadSingleRaw(tmp_path)
                 if not upload_ok:
-                    _LOGGER.error("Moon render: upload returned failure")
+                    _LOGGER.error("Moon render: GIF upload failed")
                     return
             finally:
                 if os.path.exists(tmp_path):
