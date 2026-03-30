@@ -171,10 +171,11 @@ automation:
 
 This integration is a fork of
 [tukies/iDotMatrix-HomeAssistant](https://github.com/tukies/iDotMatrix-HomeAssistant)
-(MIT licence). The original project provided the Bluetooth client library and initial
+(GPL v3 licence). The original project provided the Bluetooth client library and initial
 integration scaffolding. This fork has been substantially rewritten — the display
 architecture, service API, and entity model are entirely new — but the underlying BLE
-protocol work from the original authors is preserved and credited.
+protocol work from the original authors is preserved and credited. As a derivative work
+of a GPL v3 project, this fork is also distributed under GPL v3.
 
 The moon phase renderer is based on astronomical calculations using the
 [ephem](https://pypi.org/project/ephem/) library.
