@@ -372,8 +372,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     async def async_now_playing(call):
         """Render album art + track/artist overlay and push to the display."""
+        import hashlib
         import io
-        import tempfile
         import aiohttp
         from PIL import Image as PilImage
         from .const import DISPLAY_MODE_NOW_PLAYING
@@ -396,67 +396,70 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         _LOGGER.info("now_playing: %s — %s (art=%s)", track, artist, entity_picture)
 
-        def make_blank():
-            return PilImage.new("RGB", (64, 64), (0, 0, 0))
+        # Determine cache path — keyed by track + artist + art URL
+        cache_dir = hass.config.path(".storage", "idotmatrix_gif_cache")
+        cache_key = hashlib.md5(
+            f"{track}|{artist}|{entity_picture or ''}".encode()
+        ).hexdigest()
+        gif_path = os.path.join(cache_dir, f"{cache_key}.gif")
 
-        # Fetch album art
-        img = None
-        if entity_picture:
-            try:
-                from homeassistant.helpers.aiohttp_client import async_get_clientsession
-                session = async_get_clientsession(hass)
-                url = entity_picture if entity_picture.startswith("http") else f"http://localhost:8123{entity_picture}"
-                async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
-                    if resp.status == 200:
-                        data = await resp.read()
-                        img = await hass.async_add_executor_job(
-                            lambda: PilImage.open(io.BytesIO(data)).convert("RGB").resize((64, 64), PilImage.LANCZOS)
-                        )
-            except Exception as e:
-                _LOGGER.warning("now_playing: failed to fetch album art: %s", e)
+        if os.path.exists(gif_path):
+            _LOGGER.info("now_playing: cache hit (%s)", cache_key[:8])
+        else:
+            # Fetch album art
+            def make_blank():
+                return PilImage.new("RGB", (64, 64), (0, 0, 0))
 
-        if img is None:
-            img = await hass.async_add_executor_job(make_blank)
+            img = None
+            if entity_picture:
+                try:
+                    from homeassistant.helpers.aiohttp_client import async_get_clientsession
+                    session = async_get_clientsession(hass)
+                    url = entity_picture if entity_picture.startswith("http") else f"http://localhost:8123{entity_picture}"
+                    async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                        if resp.status == 200:
+                            data = await resp.read()
+                            img = await hass.async_add_executor_job(
+                                lambda: PilImage.open(io.BytesIO(data)).convert("RGB").resize((64, 64), PilImage.LANCZOS)
+                            )
+                except Exception as e:
+                    _LOGGER.warning("now_playing: failed to fetch album art: %s", e)
 
-        # Build animated (or static) GIF with scrolling text overlay
-        def render_gif():
-            frames_data = render_now_playing_frames(img, track, artist)
-            frames = [f for f, _ in frames_data]
-            durations = [d for _, d in frames_data]
+            if img is None:
+                img = await hass.async_add_executor_job(make_blank)
 
-            # Quantize all frames to a shared palette
-            palette_frame = frames[0].quantize(colors=256)
-            frames_p = [frames[0].quantize(palette=palette_frame)]
-            for f in frames[1:]:
-                frames_p.append(f.quantize(palette=palette_frame))
+            # Render and save to cache
+            def render_and_cache():
+                frames_data = render_now_playing_frames(img, track, artist)
+                frames = [f for f, _ in frames_data]
+                durations = [d for _, d in frames_data]
 
-            buf = io.BytesIO()
-            if len(frames_p) == 1:
-                frames_p[0].save(buf, format="GIF", loop=0, disposal=2)
-            else:
-                frames_p[0].save(
-                    buf,
-                    format="GIF",
-                    save_all=True,
-                    append_images=frames_p[1:],
-                    loop=0,
-                    duration=durations,
-                    disposal=2,
-                )
-            return buf.getvalue()
+                palette_frame = frames[0].quantize(colors=256)
+                frames_p = [frames[0].quantize(palette=palette_frame)]
+                for f in frames[1:]:
+                    frames_p.append(f.quantize(palette=palette_frame))
 
-        gif_data = await hass.async_add_executor_job(render_gif)
+                buf = io.BytesIO()
+                if len(frames_p) == 1:
+                    frames_p[0].save(buf, format="GIF", loop=0, disposal=2)
+                else:
+                    frames_p[0].save(
+                        buf,
+                        format="GIF",
+                        save_all=True,
+                        append_images=frames_p[1:],
+                        loop=0,
+                        duration=durations,
+                        disposal=2,
+                    )
+                os.makedirs(cache_dir, exist_ok=True)
+                with open(gif_path, "wb") as f:
+                    f.write(buf.getvalue())
 
-        with tempfile.NamedTemporaryFile(suffix=".gif", delete=False) as tmp:
-            tmp.write(gif_data)
-            tmp_path = tmp.name
+            await hass.async_add_executor_job(render_and_cache)
+            _LOGGER.info("now_playing: rendered and cached (%s)", cache_key[:8])
 
-        try:
-            ok = await IDMGif().uploadSingleRaw(tmp_path)
-        finally:
-            import os
-            if os.path.exists(tmp_path):
-                os.remove(tmp_path)
+        ok = await IDMGif().uploadSingleRaw(gif_path)
 
         if not ok:
             _LOGGER.error("now_playing: GIF upload failed")
