@@ -258,7 +258,7 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
 
         moon_attrs = await self.hass.async_add_executor_job(_compute_moon_attrs, lat, lon, elev)
 
-        if set_default:
+        if set_default and not display_for:
             self._default_mode = DISPLAY_MODE_MOON
             self._default_attrs = {}
             await self._save()
@@ -367,7 +367,7 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
             "media_artist": artist,
         }
 
-        if set_default:
+        if set_default and not display_for:
             self._default_mode = DISPLAY_MODE_NOW_PLAYING
             self._default_attrs = {"entity_id": entity_id}
             await self._save()
@@ -440,7 +440,7 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
 
         attrs = {"path": path}
 
-        if set_default:
+        if set_default and not display_for:
             self._default_mode = DISPLAY_MODE_IMAGE
             self._default_attrs = {"path": path}
             await self._save()
@@ -528,7 +528,7 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
 
         attrs = {"char": char, "codepoints": codepoints}
 
-        if set_default:
+        if set_default and not display_for:
             self._default_mode = DISPLAY_MODE_EMOJI
             self._default_attrs = {"char": char}
             await self._save()
