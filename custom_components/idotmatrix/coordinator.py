@@ -1,1093 +1,456 @@
-"""DataUpdateCoordinator for iDotMatrix."""
+"""DataUpdateCoordinator for iDotMatrix — owns all display logic."""
 from __future__ import annotations
 
+import hashlib
+import io
 import logging
-import asyncio
-import re
+import os
+import tempfile
 from datetime import timedelta
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, Event, callback
-from homeassistant.helpers.update_coordinator import (
-    DataUpdateCoordinator,
-    UpdateFailed,
-)
-from homeassistant.helpers.event import async_track_state_change_event
-
-from .const import DOMAIN, CONF_DISPLAY_MODE, DISPLAY_MODE_DESIGN, DISPLAY_MODE_TEXT, DISPLAY_MODE_EXTERNAL, DISPLAY_MODE_MOON, DISPLAY_MODE_NOW_PLAYING
-from .client.connectionManager import ConnectionManager
-from bleak.exc import BleakError
-from .client.modules.text import Text
-from .client.modules.image import Image as IDMImage
-from .client.modules.gif import Gif as IDMGif
-from .client.modules.clock import Clock
-from .client.modules.fullscreenColor import FullscreenColor
-
-
-from homeassistant.helpers import template
-from homeassistant.util import dt as dt_util
-
-import os
-import tempfile
-import io
-import random
-from PIL import Image, ImageDraw, ImageFont
-
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.storage import Store
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+from homeassistant.util import dt as dt_util
+from PIL import Image as PilImage
 
-MDI_META_URL = "https://raw.githubusercontent.com/Templarian/MaterialDesign/master/meta.json"
-MDI_FONT_URL = "https://raw.githubusercontent.com/Templarian/MaterialDesign-Webfont/master/fonts/materialdesignicons-webfont.ttf"
-
+from .const import (
+    DISPLAY_MODE_IMAGE,
+    DISPLAY_MODE_MOON,
+    DISPLAY_MODE_NOW_PLAYING,
+    DOMAIN,
+    STORAGE_VERSION,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
-STORAGE_VERSION = 1
-STORAGE_KEY_PREFIX = "idotmatrix_settings_"
+SCREEN_SIZE = 64
 
-# Regex to extract entity IDs from Jinja templates
-ENTITY_REGEX = re.compile(r"states\(['\"]([a-z_]+\.[a-z0-9_]+)['\"]\)")
+
+def _crop_and_resize(img: PilImage.Image, size: int) -> PilImage.Image:
+    """Centre-crop to square then resize to size×size."""
+    w, h = img.size
+    m = min(w, h)
+    left = (w - m) // 2
+    top = (h - m) // 2
+    return img.crop((left, top, left + m, top + m)).resize(
+        (size, size), PilImage.LANCZOS
+    )
+
+
+def _compute_moon_attrs(lat: str, lon: str, elev: int) -> dict:
+    """Return a dict of moon stats for the current moment."""
+    import ephem
+
+    obs = ephem.Observer()
+    obs.lat = lat
+    obs.lon = lon
+    obs.elevation = float(elev)
+    obs.date = ephem.now()
+
+    moon = ephem.Moon(obs)
+    moon.compute(obs)
+
+    age = float(obs.date - ephem.previous_new_moon(obs.date))
+    waxing = age < 14.77
+    pct = moon.phase
+
+    if pct < 2:
+        phase = "New Moon"
+    elif pct < 45:
+        phase = "Waxing Crescent" if waxing else "Waning Crescent"
+    elif pct < 55:
+        phase = "First Quarter" if waxing else "Last Quarter"
+    elif pct < 98:
+        phase = "Waxing Gibbous" if waxing else "Waning Gibbous"
+    else:
+        phase = "Full Moon"
+
+    try:
+        rise = ephem.localtime(obs.next_rising(ephem.Moon())).isoformat()
+        setting = ephem.localtime(obs.next_setting(ephem.Moon())).isoformat()
+    except Exception:
+        rise = None
+        setting = None
+
+    return {
+        "moon_phase": phase,
+        "moon_illumination": round(pct, 1),
+        "moon_altitude_deg": round(float(moon.alt) * 57.2958, 1),
+        "moon_next_rise": rise,
+        "moon_next_set": setting,
+    }
 
 
 class IDotMatrixCoordinator(DataUpdateCoordinator):
-    """Class to manage fetching iDotMatrix data."""
+    """Coordinator: polls BLE status, owns all display render/upload logic."""
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
-        """Initialize."""
         super().__init__(
             hass,
             _LOGGER,
             name=DOMAIN,
-            update_interval=timedelta(seconds=60),
+            update_interval=timedelta(seconds=30),
         )
         self.entry = entry
-        self._store = Store(hass, STORAGE_VERSION, f"{STORAGE_KEY_PREFIX}{entry.entry_id}")
-        self._entity_unsubs: list = []  # Entity state change unsubscribe callbacks
-        self.display_mode = entry.options.get(CONF_DISPLAY_MODE, DISPLAY_MODE_DESIGN)
-        self._svg_error_logged = False
-        self._icon_cache: dict[tuple[str, int], Image.Image | None] = {}
-        self._mdi_meta: dict[str, str] | None = None
-        self._mdi_font_bytes: bytes | None = None
-        self._mdi_fonts: dict[int, ImageFont.FreeTypeFont] = {}
-        self._mdi_lock = asyncio.Lock()
-        self._mdi_error_logged = False
-        self._mdi_unknown_icons: set[str] = set()
+        self._store = Store(hass, STORAGE_VERSION, f"idotmatrix_{entry.entry_id}")
 
-        # GIF rotation tracking
-        self._gif_rotation_task: asyncio.Task | None = None
-        self._gif_rotation_stop = asyncio.Event()
-
-        # Moon mode timer
-        self._moon_timer_unsub = None
-
-        # Now playing state
-        self._now_playing_unsub = None
-
-        # Display state tracking
+        # Current display state — read by light entity
+        self.display_mode: str | None = None
+        self.display_attrs: dict = {}
         self.screen_on: bool = True
-        self.last_render_time: str | None = None
+        self.brightness: int = 128  # HA scale 0-255
 
-        # Shared settings for Text entity
-        self.text_settings = {
-            "current_text": "",   # The actual text content
-            "font": "Rain-DRM3.otf",
-            "animation_mode": 1,  # Marquee
-            "speed": 80,
-            "color_mode": 1,      # Single Color
-            "color": [255, 0, 0], # Red default
-            "spacing": 1,         # Horizontal Spacing (pixels)
-            "spacing_y": 1,       # Vertical Spacing (pixels)
-            "proportional": True, # Use proportional font rendering
-            "blur": 5,            # Text Blur/Antialiasing (0=Sharp, 5=Smooth)
-            "font_size": 10,      # Font Size (pixels)
-            "multiline": False,   # Wrap text as image
-            "screen_size": 32,    # 32x32 or 16x16
-            "brightness": 128,    # 0-255 (mapped to 5-100)
-            "clock_style": 0,     # Default style index
-            "clock_date": True,   # Show date
-            "clock_format": "24h",# 12h or 24h
-            "fun_text_delay": 0.4,# Fun Text delay in seconds
-            "autosize": False,    # Auto-scale font to fit screen
-            "mode": "basic",      # basic | advanced
-            "layers": [],         # List of layers for advanced mode
-        }
-        
-    async def async_set_face_config(self, face_config: dict) -> None:
-        """Update face configuration from service and set up entity tracking."""
-        if not face_config:
-            return
+        # Timestamp of last successful upload — read by sensor
+        self.last_updated: str | None = None
 
-        layers = face_config.get("layers", [])
-        self.text_settings["mode"] = "advanced"
-        self.text_settings["layers"] = layers
+        # Persisted default (replayed on light.turn_on and HA restart)
+        self._default_mode: str | None = None
+        self._default_attrs: dict = {}
 
-        self._apply_face_tracking(face_config)
-        
-        # Trigger initial update
-        await self.async_update_device()
+        # Cancel handle for display_for revert timer
+        self._revert_unsub = None
 
-    def _clear_face_tracking(self) -> None:
-        """Cancel any entity listeners for face updates."""
-        for unsub in self._entity_unsubs:
-            unsub()
-        self._entity_unsubs = []
+    # ------------------------------------------------------------------
+    # DataUpdateCoordinator
 
-    def _apply_face_tracking(self, face_config: dict) -> None:
-        """Register entity listeners for advanced face updates."""
-        self._clear_face_tracking()
-
-        if self.display_mode != DISPLAY_MODE_DESIGN:
-            return
-
-        layers = face_config.get("layers", [])
-        if not layers:
-            return
-
-        # Extract entity IDs from layers
-        entities_to_track = set()
-        for layer in layers:
-            # Direct entity reference
-            if entity := layer.get("entity"):
-                entities_to_track.add(entity)
-
-            # Entity IDs in templates (e.g., {{ states('sensor.temp') }})
-            if content := layer.get("content"):
-                matches = ENTITY_REGEX.findall(content)
-                entities_to_track.update(matches)
-            if tpl := layer.get("template"):
-                matches = ENTITY_REGEX.findall(tpl)
-                entities_to_track.update(matches)
-            if icon_tpl := layer.get("icon_template"):
-                matches = ENTITY_REGEX.findall(icon_tpl)
-                entities_to_track.update(matches)
-
-        # Add explicit trigger entity if specified (for time-based or other updates)
-        if trigger := face_config.get("trigger_entity"):
-            if isinstance(trigger, str) and trigger.strip():
-                entities_to_track.add(trigger.strip())
-            elif isinstance(trigger, list):
-                for t in trigger:
-                    if t and t.strip():
-                        entities_to_track.add(t.strip())
-
-        # Set up state change listeners
-        if entities_to_track:
-            _LOGGER.info(f"[iDotMatrix] Tracking entities for auto-update: {entities_to_track}")
-            unsub = async_track_state_change_event(
-                self.hass,
-                list(entities_to_track),
-                self._on_entity_state_change
-            )
-            self._entity_unsubs.append(unsub)
-
-    async def async_set_display_mode(self, mode: str) -> None:
-        """Update display mode and refresh entity tracking."""
-        self.display_mode = mode
-        if mode == DISPLAY_MODE_DESIGN:
-            self._apply_face_tracking({"layers": self.text_settings.get("layers", [])})
-        else:
-            self._clear_face_tracking()
-        if mode == DISPLAY_MODE_MOON:
-            self._setup_moon_timer()
-        else:
-            self._cancel_moon_timer()
-        if mode != DISPLAY_MODE_NOW_PLAYING:
-            self._cancel_now_playing_listener()
-
-    def set_now_playing_entity(self, entity_id: str) -> None:
-        """Watch a media player entity and revert to moon when it stops playing."""
-        self._cancel_now_playing_listener()
-        self._now_playing_unsub = async_track_state_change_event(
-            self.hass,
-            [entity_id],
-            self._on_media_player_state_change,
-        )
-
-    def _cancel_now_playing_listener(self) -> None:
-        if self._now_playing_unsub:
-            self._now_playing_unsub()
-            self._now_playing_unsub = None
-
-    async def _on_media_player_state_change(self, event) -> None:
-        """Revert to moon when the tracked media player stops playing."""
-        new_state = event.data.get("new_state")
-        if new_state is None or new_state.state != "playing":
-            _LOGGER.info("Media player stopped — reverting to moon mode")
-            self._cancel_now_playing_listener()
-            await self.async_set_display_mode(DISPLAY_MODE_MOON)
-            await self.async_update_device()
-
-    def _setup_moon_timer(self) -> None:
-        """Start a 5-minute periodic timer to re-render the moon image."""
-        from homeassistant.helpers.event import async_track_time_interval
-        self._cancel_moon_timer()
-        self._moon_timer_unsub = async_track_time_interval(
-            self.hass, self._moon_timer_callback, timedelta(minutes=5)
-        )
-
-    def _cancel_moon_timer(self) -> None:
-        if self._moon_timer_unsub:
-            self._moon_timer_unsub()
-            self._moon_timer_unsub = None
-
-    async def _moon_timer_callback(self, now) -> None:
-        if self.display_mode == DISPLAY_MODE_MOON:
-            await self.async_update_device()
-
-    @callback
-    def _on_entity_state_change(self, event: Event) -> None:
-        """Handle entity state change by re-rendering face."""
-        entity_id = event.data.get("entity_id")
-        _LOGGER.debug(f"[iDotMatrix] Entity {entity_id} changed, re-rendering face")
-        # Schedule async update
-        self.hass.async_create_task(self.async_update_device())
-
-
-    async def _render_face(self, layers: list, screen_size: int) -> Image.Image:
-        """Render the advanced display face."""
-        # Create base canvas
-        canvas = Image.new("RGB", (screen_size, screen_size), (0, 0, 0))
-        draw = ImageDraw.Draw(canvas)
-        
-        # Load Fonts Cache (simple dict for now)
-        # We can reuse the font loading logic or abstract it
-        
-        for layer in layers:
-            # check conditions
-            if (cond_tpl := layer.get("condition_template")):
-                try:
-                    tpl = template.Template(cond_tpl, self.hass)
-                    if not tpl.async_render(parse_result=False):
-                        continue
-                except Exception as e:
-                    _LOGGER.warning(f"Error evaluating condition '{cond_tpl}': {e}")
-                    continue
-
-            l_type = layer.get("type", "text")
-            x = layer.get("x", 0)
-            y = layer.get("y", 0)
-            
-            if l_type == "text":
-                content = ""
-                icon_ref = layer.get("icon")
-                icon_size = int(layer.get("icon_size", 16))
-                icon_template = layer.get("icon_template")
-                
-                # Priority: content (already resolved) > entity > template
-                if layer.get("content"):
-                    # Content already resolved by frontend
-                    content = layer.get("content", "")
-                elif entity_id := layer.get("entity"):
-                    # Get state from entity
-                    if state := self.hass.states.get(entity_id):
-                        content = state.state
-                    else:
-                        content = "N/A"
-                elif layer.get("is_template", False) or layer.get("template"):
-                    # Render Jinja template
-                    tpl_str = layer.get("template") or ""
-                    try:
-                        tpl = template.Template(tpl_str, self.hass)
-                        content = tpl.async_render(parse_result=False)
-                    except Exception as e:
-                        content = "ERR"
-                        _LOGGER.warning(f"Error evaluating text template: {e}")
-
-                if not icon_ref and icon_template:
-                    try:
-                        tpl = template.Template(icon_template, self.hass)
-                        icon_ref = tpl.async_render(parse_result=False)
-                    except Exception as e:
-                        _LOGGER.warning(f"Error evaluating icon template: {e}")
-                
-                # Render icon if present
-                if icon_ref:
-                    icon_img = await self._load_icon(icon_ref, icon_size)
-                    if icon_img:
-                        r, g, b, a = icon_img.split()
-                        color = tuple(layer.get("color", [255, 255, 255]))
-                        colored_icon = Image.new("RGB", icon_img.size, color)
-                        canvas.paste(colored_icon, (x, y), mask=a)
-
-                # Skip empty content
-                if not content:
-                    continue
-                
-                # Render Text using LAYER settings only (not global text_settings)
-                color = tuple(layer.get("color", [255, 255, 255]))
-                font_name = layer.get("font", "Rain-DRM3.otf")
-                font_size = int(layer.get("font_size", 10))
-                spacing_x = int(layer.get("spacing_x", 1))
-                spacing_y = int(layer.get("spacing_y", 1))
-                blur = int(layer.get("blur", 5))
-                
-                # Resolve font path
-                base_path = os.path.dirname(os.path.abspath(__file__))
-                fonts_dir = os.path.join(base_path, "fonts")
-                font_path = os.path.join(fonts_dir, "Rain-DRM3.otf")
-                
-                if font_name:
-                    if not os.path.isabs(font_name):
-                         potential = os.path.join(fonts_dir, font_name)
-                         if os.path.exists(potential):
-                             font_path = potential
-                    elif os.path.exists(font_name):
-                        font_path = font_name
-                        
-                try:
-                    font = ImageFont.truetype(font_path, font_size)
-                except:
-                    font = ImageFont.load_default()
-                
-                # Create separate RGBA layer for text to apply blur/sharpness
-                text_layer = Image.new("RGBA", (screen_size, screen_size), (0, 0, 0, 0))
-                text_draw = ImageDraw.Draw(text_layer)
-                
-                # Character-by-character rendering with custom spacing
-                current_x = x
-                for char in str(content):
-                    text_draw.text((current_x, y), char, font=font, fill=(255, 255, 255, 255))
-                    # Get character width
-                    try:
-                        bbox = font.getbbox(char)
-                        char_width = bbox[2] - bbox[0] if bbox else font.getlength(char)
-                    except:
-                        char_width = font_size // 2
-                    current_x += int(char_width) + spacing_x
-                
-                # Apply blur/sharpness effect (0=Sharp, 5=Normal, 10=Blur)
-                if blur < 5:
-                    # Apply sharpening via contrast enhancement on alpha channel
-                    r, g, b, a = text_layer.split()
-                    gain = 1.0 + ((5 - blur) * 2.0)
-                    def apply_contrast(p):
-                        v = (p - 128) * gain + 128
-                        return max(0, min(255, int(v)))
-                    a = a.point(apply_contrast)
-                    text_layer.putalpha(a)
-                elif blur > 5:
-                    # Apply blur effect
-                    from PIL import ImageFilter
-                    blur_amount = (blur - 5) * 0.5  # 0.5 to 2.5 radius
-                    text_layer = text_layer.filter(ImageFilter.GaussianBlur(radius=blur_amount))
-                
-                # Composite text onto canvas with color
-                r, g, b, a = text_layer.split()
-                colored_text = Image.new("RGB", (screen_size, screen_size), color)
-                canvas.paste(colored_text, mask=a)
-
-            elif l_type == "image":
-                 image_path = layer.get("image_path")
-                 if not image_path: continue
-                 
-                 img = None
-                 
-                 # Handle Media Source
-                 if image_path.startswith("media-source://"):
-                     try:
-                         from homeassistant.components import media_source
-                         # Resolve media source URL
-                         resolved = await media_source.async_resolve_media(self.hass, image_path, None)
-                         media_url = resolved.url
-                         
-                         # If it's a relative URL, prepend internal URL or handle locally
-                         # resolved.url is typically /media/...
-                         # We can fetch it via HTTP from localhost
-                         
-                         # However, if it maps to a file, maybe we can access directly? 
-                         # But abstracting via HTTP is safer for all media sources.
-                         
-                         # Use internal HTTP client to fetch
-                         from homeassistant.helpers.aiohttp_client import async_get_clientsession
-                         session = async_get_clientsession(self.hass)
-                         
-                         # Construct full URL if needed, but usually aiohttp handles relative to host if configured?
-                         # No, we need absolute URL or use loopback. 
-                         # Actually, HA's aiohttp client is for external. 
-                         # For internal, we might need to assume localhost.
-                         # Better: use hass.http?
-                         
-                         # Let's try to fetch relative URL using the server's port?
-                         # simpler: "http://127.0.0.1:8123" + media_url
-                         
-                         url = f"http://127.0.0.1:{self.hass.http.server_port}{media_url}"
-                         async with session.get(url) as resp:
-                             if resp.status == 200:
-                                 data = await resp.read()
-                                 import io
-                                 img = Image.open(io.BytesIO(data))
-                             else:
-                                 _LOGGER.error(f"Failed to fetch media: {resp.status}")
-                                 continue
-                     except Exception as e:
-                         _LOGGER.error(f"Error resolving media source {image_path}: {e}")
-                         continue
-
-                 else:
-                     # Legacy/Local path handling
-                     # Resolve path (Check 'www' or absolute)
-                     if not os.path.isabs(image_path):
-                         # Default to config/www/idotmatrix/
-                         base_www = self.hass.config.path("www", "idotmatrix")
-                         potential = os.path.join(base_www, image_path)
-                         if os.path.exists(potential):
-                             image_path = potential
-                         else:
-                             # Try locally in integration (bundled icons?)
-                             local = os.path.join(os.path.dirname(__file__), "images", image_path)
-                             if os.path.exists(local):
-                                 image_path = local
-                                 
-                     if os.path.exists(image_path):
-                         try:
-                            img = Image.open(image_path)
-                         except Exception as e:
-                             _LOGGER.error(f"Failed to load image file {image_path}: {e}")
-                             continue
-                
-                 if img:
-                     try:
-                         img = img.convert("RGBA")
-                         # Resize if size provided
-                         w = layer.get("width")
-                         h = layer.get("height")
-                         if w and h:
-                             img = img.resize((int(w), int(h)))
-                         
-                         canvas.paste(img, (x, y), img)
-                     except Exception as e:
-                         _LOGGER.error(f"Failed to process image layer: {e}")
-
-        return canvas
-
-    async def _load_icon(self, icon_ref: str, size: int) -> Image.Image | None:
-        """Fetch and rasterize an icon reference."""
-        if not icon_ref:
-            return None
-
-        icon_ref = icon_ref.strip()
-        if not icon_ref:
-            return None
-
-        cache_key = (icon_ref, size)
-        if cache_key in self._icon_cache:
-            cached = self._icon_cache[cache_key]
-            return cached.copy() if cached else None
-
-        url = None
-        if icon_ref.startswith("mdi:"):
-            icon_name = icon_ref.split(":", 1)[1]
-            icon_img = await self._render_mdi_icon(icon_name, size)
-            if icon_img:
-                self._icon_cache[cache_key] = icon_img
-                return icon_img.copy()
-
-        if ":" in icon_ref and not icon_ref.startswith(("http://", "https://")):
-            from urllib.parse import quote
-
-            icon_id = quote(icon_ref, safe=":/-")
-            url = f"https://api.iconify.design/{icon_id}.svg"
-        elif icon_ref.startswith("/"):
-            url = f"http://127.0.0.1:{self.hass.http.server_port}{icon_ref}"
-        elif icon_ref.startswith("http://") or icon_ref.startswith("https://"):
-            url = icon_ref
-
-        if not url:
-            _LOGGER.warning("Unsupported icon reference: %s", icon_ref)
-            return None
-
+    async def _async_update_data(self) -> dict:
+        """Poll BLE connection status."""
         try:
-            session = async_get_clientsession(self.hass)
-            ssl = False if url.startswith("https://api.iconify.design/") else None
-            async with session.get(url, ssl=ssl) as resp:
-                if resp.status != 200:
-                    _LOGGER.warning("Failed to fetch icon %s (status %s)", icon_ref, resp.status)
-                    self._icon_cache[cache_key] = None
-                    return None
-                content_type = resp.headers.get("Content-Type", "")
-                data = await resp.read()
-
-            if "svg" in content_type or data.lstrip().startswith(b"<svg") or data.lstrip().startswith(b"<?xml"):
-                png_bytes = await self.hass.async_add_executor_job(
-                    self._svg_to_png,
-                    data,
-                    size,
-                )
-                if not png_bytes:
-                    if not self._svg_error_logged:
-                        _LOGGER.warning(
-                            "SVG icon rendering unavailable; install cairo to enable SVG icons."
-                        )
-                        self._svg_error_logged = True
-                    self._icon_cache[cache_key] = None
-                    return None
-                icon_img = Image.open(io.BytesIO(png_bytes)).convert("RGBA")
-            else:
-                icon_img = Image.open(io.BytesIO(data)).convert("RGBA")
-                if icon_img.size != (size, size):
-                    icon_img = icon_img.resize((size, size))
-            self._icon_cache[cache_key] = icon_img
-            return icon_img.copy()
-        except Exception as exc:
-            _LOGGER.warning("Failed to render icon %s: %s", icon_ref, exc)
-            self._icon_cache[cache_key] = None
-            return None
-
-    @staticmethod
-    def _svg_to_png(svg_data: bytes, size: int) -> bytes | None:
-        """Convert SVG bytes to PNG bytes."""
-        try:
-            import cairosvg
-            return cairosvg.svg2png(
-                bytestring=svg_data,
-                output_width=size,
-                output_height=size,
-            )
+            from .client.connectionManager import ConnectionManager
+            cm = ConnectionManager()
+            connected = cm.client is not None and cm.client.is_connected
         except Exception:
-            return None
+            connected = False
+        return {"connected": connected}
 
-    async def _render_mdi_icon(self, icon_name: str, size: int) -> Image.Image | None:
-        """Render an MDI icon using the bundled font."""
-        await self._ensure_mdi_assets()
+    # ------------------------------------------------------------------
+    # Persistence
 
-        if not self._mdi_meta or not self._mdi_font_bytes:
-            return None
+    async def async_load_and_replay(self) -> None:
+        """Load persisted state on startup and replay the default display."""
+        stored = await self._store.async_load() or {}
+        self._default_mode = stored.get("mode")
+        self._default_attrs = stored.get("attrs", {})
+        self.brightness = stored.get("brightness", 128)
+        if self._default_mode:
+            _LOGGER.info("Replaying persisted default: %s", self._default_mode)
+            await self._replay_default()
 
-        codepoint = self._mdi_meta.get(icon_name)
-        if not codepoint:
-            if icon_name not in self._mdi_unknown_icons:
-                _LOGGER.warning("Unknown MDI icon: %s", icon_name)
-                self._mdi_unknown_icons.add(icon_name)
-            return None
+    async def _save(self) -> None:
+        await self._store.async_save({
+            "mode": self._default_mode,
+            "attrs": self._default_attrs,
+            "brightness": self.brightness,
+        })
 
-        font = self._mdi_fonts.get(size)
-        if not font:
-            font = ImageFont.truetype(io.BytesIO(self._mdi_font_bytes), size)
-            self._mdi_fonts[size] = font
+    # ------------------------------------------------------------------
+    # display_for timer
 
-        icon_img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-        draw = ImageDraw.Draw(icon_img)
-        char = chr(int(codepoint, 16))
+    def cancel_revert(self) -> None:
+        if self._revert_unsub:
+            self._revert_unsub()
+            self._revert_unsub = None
 
-        bbox = draw.textbbox((0, 0), char, font=font)
-        x = (size - (bbox[2] - bbox[0])) // 2 - bbox[0]
-        y = (size - (bbox[3] - bbox[1])) // 2 - bbox[1]
-        draw.text((x, y), char, font=font, fill=(255, 255, 255, 255))
-        return icon_img
+    def schedule_revert(self, seconds: float) -> None:
+        """Revert to default display after `seconds`."""
+        self.cancel_revert()
 
-    async def _ensure_mdi_assets(self) -> None:
-        """Load MDI meta and font bytes."""
-        if self._mdi_meta and self._mdi_font_bytes:
-            return
+        @callback
+        def _cb(_now):
+            self.hass.async_create_task(self._replay_default())
 
-        async with self._mdi_lock:
-            if self._mdi_meta and self._mdi_font_bytes:
-                return
+        self._revert_unsub = async_call_later(self.hass, seconds, _cb)
 
-            session = async_get_clientsession(self.hass)
-            try:
-                async with session.get(MDI_META_URL, ssl=False) as resp:
-                    if resp.status != 200:
-                        if not self._mdi_error_logged:
-                            _LOGGER.warning("Failed to fetch MDI metadata (status %s)", resp.status)
-                            self._mdi_error_logged = True
-                        return
-                    meta_data = await resp.json(content_type=None)
+    async def _replay_default(self) -> None:
+        """Re-run the stored default display."""
+        self._revert_unsub = None
+        mode = self._default_mode
+        attrs = self._default_attrs
+        if mode == DISPLAY_MODE_MOON:
+            await self.do_display_moon(set_default=False)
+        elif mode == DISPLAY_MODE_NOW_PLAYING:
+            entity_id = attrs.get("entity_id")
+            if entity_id:
+                await self.do_display_now_playing(entity_id, set_default=False)
+        elif mode == DISPLAY_MODE_IMAGE:
+            path = attrs.get("path")
+            if path:
+                await self.do_display_image(path, set_default=False)
 
-                async with session.get(MDI_FONT_URL, ssl=False) as resp:
-                    if resp.status != 200:
-                        if not self._mdi_error_logged:
-                            _LOGGER.warning("Failed to fetch MDI font (status %s)", resp.status)
-                            self._mdi_error_logged = True
-                        return
-                    font_bytes = await resp.read()
-            except Exception as exc:
-                if not self._mdi_error_logged:
-                    _LOGGER.warning("Failed to load MDI assets: %s", exc)
-                    self._mdi_error_logged = True
-                return
+    # ------------------------------------------------------------------
+    # Internal helpers
 
-            if isinstance(meta_data, list):
-                self._mdi_meta = {
-                    item["name"]: item["codepoint"]
-                    for item in meta_data
-                    if isinstance(item, dict) and "name" in item and "codepoint" in item
-                }
-            else:
-                self._mdi_meta = None
+    def _mark_updated(self, mode: str, attrs: dict) -> None:
+        self.display_mode = mode
+        self.display_attrs = dict(attrs)
+        self.last_updated = dt_util.now().isoformat()
+        self.async_set_updated_data(self.data or {"connected": False})
 
-            self._mdi_font_bytes = font_bytes
+    def _gif_cache_dir(self) -> str:
+        return self.hass.config.path(".storage", "idotmatrix_gif_cache")
 
-    async def async_load_settings(self) -> None:
-        """Load settings from storage."""
-        if (data := await self._store.async_load()):
-            _LOGGER.debug(f"Loaded persist settings: {data}")
-            self.text_settings.update(data)
-        if self.display_mode == DISPLAY_MODE_MOON:
-            self._setup_moon_timer()
-            await self.async_update_device()
+    async def _upload_gif(self, gif_path: str) -> bool:
+        from .client.modules.gif import Gif as IDMGif
+        ok = await IDMGif().uploadSingleRaw(gif_path)
+        if not ok:
+            _LOGGER.error("GIF upload failed: %s", gif_path)
+        return ok
 
-    async def async_save_settings(self) -> None:
-        """Save settings to storage."""
-        await self._store.async_save(self.text_settings)
+    # ------------------------------------------------------------------
+    # Display services
 
-    async def _async_update_data(self):
-        """Fetch data from the device."""
-        return {"connected": True}
-
-    async def async_update_device(self) -> None:
-        """Send current configuration to the device."""
-        if self.display_mode in (DISPLAY_MODE_EXTERNAL, DISPLAY_MODE_NOW_PLAYING):
-            return
-
-        if self.display_mode == DISPLAY_MODE_MOON:
-            await self._render_and_upload_moon()
-            return
-
-        text = self.text_settings.get("current_text", "")
-        settings = self.text_settings
-
-        if self.display_mode == DISPLAY_MODE_DESIGN and settings.get("mode") == "advanced":
-             # Advanced Rendering
-             screen_size = int(settings.get("screen_size", 32))
-             image = await self._render_face(settings.get("layers", []), screen_size)
-             
-             # Save image in executor to avoid blocking
-             with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
-                tmp_path = tmp.name
-             
-             await self.hass.async_add_executor_job(image.save, tmp_path)
-             
-             try:
-                await IDMImage().setMode(1)
-                await IDMImage().uploadProcessed(tmp_path, pixel_size=screen_size)
-             finally:
-                if os.path.exists(tmp_path):
-                    os.remove(tmp_path)
-             
-        elif text:
-            # Render Text (Basic Mode)
-            if settings.get("multiline", False):
-                await self._set_multiline_text(text, settings)
-            else:
-                # Standard Scroller
-                await Text().setMode(
-                    text=text,
-                    font_size=int(settings.get("font_size", 10)), 
-                    font_path=settings.get("font"),
-                    text_mode=settings.get("animation_mode", 1),
-                    speed=settings.get("speed", 80),
-                    text_color_mode=settings.get("color_mode", 1),
-                    text_color=tuple(settings.get("color", (255, 0, 0))),
-                    text_bg_mode=0,
-                    text_bg_color=(0, 0, 0),
-                    spacing=settings.get("spacing", 1),
-                    proportional=settings.get("proportional", True)
-                )
-        else:
-            # Render Clock (Default fallback)
-            # Use self.text_settings for clock config
-            # Retrieve color and format
-            c = settings.get("color", [255, 0, 0])
-            h24 = settings.get("clock_format", "24h") == "24h"
-            
-            style = settings.get("clock_style", 0)
-            show_date = settings.get("clock_date", True)
-            
-                
-            await Clock().setMode(
-                style=style,
-                visibleDate=show_date,
-                hour24=h24,
-                r=c[0],
-                g=c[1],
-                b=c[2]
-            )
-            
-        # Notify listeners to update UI states
-        self.async_set_updated_data(self.data)
-        
-        # Save persistence
-        await self.async_save_settings()
-
-    async def _render_and_upload_moon(self) -> None:
-        """Render the moon phase image and upload it to the device as a GIF."""
-        import tempfile
-        import io
+    async def do_display_moon(
+        self,
+        display_for: float | None = None,
+        set_default: bool = True,
+    ) -> None:
+        """Render moon phase and upload as GIF."""
         from .moon import render_image
 
         lat = str(self.hass.config.latitude)
         lon = str(self.hass.config.longitude)
         elev = int(self.hass.config.elevation or 0)
-        _LOGGER.info("Moon render: lat=%s lon=%s elev=%s", lat, lon, elev)
 
-        def do_render_gif():
+        def _render_gif() -> bytes:
             img = render_image(lat, lon, elev)
             gif_img = img.quantize(colors=256)
             buf = io.BytesIO()
             gif_img.save(buf, format="GIF", loop=0, disposal=2)
             return buf.getvalue()
 
-        try:
-            gif_data = await self.hass.async_add_executor_job(do_render_gif)
+        gif_data = await self.hass.async_add_executor_job(_render_gif)
 
-            with tempfile.NamedTemporaryFile(suffix=".gif", delete=False) as tmp:
-                tmp.write(gif_data)
-                tmp_path = tmp.name
-
-            try:
-                upload_ok = await IDMGif().uploadSingleRaw(tmp_path)
-                if not upload_ok:
-                    _LOGGER.error("Moon render: GIF upload failed")
-                    return
-            finally:
-                if os.path.exists(tmp_path):
-                    os.remove(tmp_path)
-
-            self.last_render_time = dt_util.now().isoformat()
-            self.async_set_updated_data(self.data)
-            _LOGGER.info("Moon image rendered and uploaded")
-        except Exception as e:
-            _LOGGER.error("Failed to render moon image: %s", e)
-
-    async def _set_multiline_text(self, text: str, settings: dict) -> None:
-        """Generate an image from text and upload it."""
-        screen_size = int(settings.get("screen_size", 32))
-        font_name = settings.get("font")
-        color = tuple(settings.get("color", (255, 0, 0)))
-        spacing = int(settings.get("spacing", 1))
-        spacing_y = int(settings.get("spacing_y", 1))
-        blur = int(settings.get("blur", 5))
-        
-        # Resolve font path
-        # Note: __file__ here is coordinator.py, so we need to adjust path logic
-        base_path = os.path.dirname(os.path.abspath(__file__))
-        fonts_dir = os.path.join(base_path, "fonts")
-        font_path = os.path.join(fonts_dir, "Rain-DRM3.otf")
-        
-        if font_name:
-            if not os.path.isabs(font_name):
-                 potential = os.path.join(fonts_dir, font_name)
-                 if os.path.exists(potential):
-                     font_path = potential
-            elif os.path.exists(font_name):
-                font_path = font_name
-                
-        # Determine font size and max scanning range if autosize is on
-        initial_font_size = int(settings.get("font_size", 10))
-        target_font_size = initial_font_size
-        
-        if settings.get("autosize", False):
-            # Start from user's size or 32, whichever is reasonable, and shrink until fit
-            # Or always start large? Let's start from current size and shrink, 
-            # OR start from 32 (max) to find biggest possible fit? "Perfectly" usually means "Maximize".
-            # Let's try to Maximize: Start at 32 (or screen_size) down to 6.
-            start_size = screen_size
-            end_size = 6
-        else:
-            # Single pass
-            start_size = initial_font_size
-            end_size = initial_font_size
-
-        font_path_to_use = font_path
-
-        # Iterative resizing loop
-        for s in range(start_size, end_size - 1, -1):
-            target_font_size = s
-            try:
-                if font_path_to_use.lower().endswith(".bdf"):
-                     font = ImageFont.load(font_path_to_use)
-                     # BDF fonts are fixed size, autosize won't work well unless we pick different files.
-                     # For now, skip autosize on BDF or just use it as is.
-                else:
-                     font = ImageFont.truetype(font_path_to_use, s)
-            except:
-                font = ImageFont.load_default()
-
-            # Pixel-based Word Wrapping (Simulated for check)
-            words = text.split(' ')
-            lines = []
-            current_line = []
-            
-            def get_word_width(word):
-                if not word: return 0
-                w = 0
-                for i, char in enumerate(word):
-                    bbox = font.getbbox(char)
-                    char_w = (bbox[2] - bbox[0]) if bbox else font.getlength(char)
-                    w += char_w + spacing
-                return w - spacing
-            
-            # Recalculate space width for this font size
-            try:
-                space_bbox = font.getbbox(" ")
-                space_w = (space_bbox[2] - space_bbox[0]) if space_bbox else font.getlength(" ")
-            except:
-                space_w = 4
-            space_width = space_w + spacing
-            if space_width < 1: space_width = 1
-            
-            current_line_width = 0
-            
-            for word in words:
-                word_width = get_word_width(word)
-                if current_line_width + word_width <= screen_size:
-                    current_line.append(word)
-                    current_line_width += word_width + space_width
-                else:
-                    if current_line:
-                        lines.append(current_line)
-                        current_line = []
-                        current_line_width = 0
-                    current_line.append(word)
-                    current_line_width = word_width + space_width
-            if current_line:
-                lines.append(current_line)
-            
-            # Check Height
-            ascent, descent = font.getmetrics()
-            line_height = ascent + descent + spacing_y
-            total_height = len(lines) * line_height
-            
-            # If autosize is OFF, we accept the first pass (initial_font_size)
-            if not settings.get("autosize", False):
-                break
-                
-            # If autosize is ON, check if it fits
-            if total_height <= screen_size and all(get_word_width(w) <= screen_size for w in words):
-                 # Fits!
-                 break
-        
-        # Draw lines using chosen target_font_size
-        text_layer = Image.new("RGBA", (screen_size, screen_size), (0, 0, 0, 0))
-        draw = ImageDraw.Draw(text_layer)
-        
-        y = (screen_size - total_height) // 2 if settings.get("autosize", False) else 0 # Center vertically if autosizing
-        if y < 0: y = 0
-        
-        for line_words in lines:
-            if y >= screen_size: break
-            # Center Horizontally?
-            # Standard wrapper is left aligned. Perfect fit usually implies Center/Center.
-            # Let's calculate line width for centering
-            line_w = 0
-            for i, w in enumerate(line_words):
-                 line_w += get_word_width(w)
-                 if i < len(line_words) - 1: line_w += space_width
-            
-            x = (screen_size - line_w) // 2 if settings.get("autosize", False) else 0
-            if x < 0: x = 0
-            
-            for i, word in enumerate(line_words):
-                for char in word:
-                    if x >= screen_size: break
-                    draw.text((x, y), char, font=font, fill=(255, 255, 255, 255))
-                    bbox = font.getbbox(char)
-                    char_w = (bbox[2] - bbox[0]) if bbox else font.getlength(char)
-                    x += char_w + spacing
-                if i < len(line_words) - 1:
-                     x += space_width
-            y += line_height
-            
-        if blur < 5:
-             r, g, b, a = text_layer.split()
-             gain = 1.0 + ((5 - blur) * 2.0) 
-             def apply_contrast(p):
-                 v = (p - 128) * gain + 128
-                 return max(0, min(255, int(v)))
-             a = a.point(apply_contrast)
-             text_layer.putalpha(a)
-             
-        final_image = Image.new("RGB", (screen_size, screen_size), (0, 0, 0))
-        r, g, b, a = text_layer.split()
-        colored_text = Image.new("RGB", (screen_size, screen_size), color)
-        final_image.paste(colored_text, mask=a)
-        
-        image = final_image
-        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
-            image.save(tmp.name)
+        with tempfile.NamedTemporaryFile(suffix=".gif", delete=False) as tmp:
+            tmp.write(gif_data)
             tmp_path = tmp.name
+
         try:
-            await IDMImage().setMode(1)
-            await IDMImage().uploadProcessed(tmp_path, pixel_size=screen_size)
+            ok = await self._upload_gif(tmp_path)
         finally:
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
 
-    async def async_display_gif(
+        if not ok:
+            return
+
+        moon_attrs = await self.hass.async_add_executor_job(
+            _compute_moon_attrs, lat, lon, elev
+        )
+
+        if set_default:
+            self._default_mode = DISPLAY_MODE_MOON
+            self._default_attrs = {}
+            await self._save()
+
+        if display_for:
+            self.schedule_revert(display_for)
+        else:
+            self.cancel_revert()
+
+        self._mark_updated(DISPLAY_MODE_MOON, moon_attrs)
+        _LOGGER.info(
+            "display_moon: uploaded (%s, %.1f%% illuminated)",
+            moon_attrs.get("moon_phase"),
+            moon_attrs.get("moon_illumination", 0),
+        )
+
+    async def do_display_now_playing(
+        self,
+        entity_id: str,
+        display_for: float | None = None,
+        set_default: bool = True,
+    ) -> None:
+        """Fetch album art from a media player and upload as now-playing GIF."""
+        import aiohttp
+        from .overlay import render_now_playing_frames
+        from homeassistant.helpers.aiohttp_client import async_get_clientsession
+
+        state = self.hass.states.get(entity_id)
+        if not state:
+            _LOGGER.error("display_now_playing: entity %s not found", entity_id)
+            return
+
+        track = state.attributes.get("media_title") or ""
+        artist = state.attributes.get("media_artist") or ""
+        entity_picture = state.attributes.get("entity_picture")
+
+        cache_dir = self._gif_cache_dir()
+        cache_key = hashlib.md5(
+            f"{track}|{artist}|{entity_picture or ''}".encode()
+        ).hexdigest()
+        gif_path = os.path.join(cache_dir, f"{cache_key}.gif")
+
+        if not os.path.exists(gif_path):
+            img = None
+            if entity_picture:
+                try:
+                    session = async_get_clientsession(self.hass)
+                    url = (
+                        entity_picture
+                        if entity_picture.startswith("http")
+                        else f"http://localhost:8123{entity_picture}"
+                    )
+                    async with session.get(
+                        url, timeout=aiohttp.ClientTimeout(total=10)
+                    ) as resp:
+                        if resp.status == 200:
+                            raw = await resp.read()
+                            img = await self.hass.async_add_executor_job(
+                                lambda: PilImage.open(io.BytesIO(raw))
+                                .convert("RGB")
+                                .resize((SCREEN_SIZE, SCREEN_SIZE), PilImage.LANCZOS)
+                            )
+                except Exception as exc:
+                    _LOGGER.warning("display_now_playing: art fetch failed: %s", exc)
+
+            if img is None:
+                img = PilImage.new("RGB", (SCREEN_SIZE, SCREEN_SIZE), (0, 0, 0))
+
+            def _render_and_cache() -> None:
+                frames_data = render_now_playing_frames(img, track, artist)
+                frames = [f for f, _ in frames_data]
+                durations = [d for _, d in frames_data]
+                palette = frames[0].quantize(colors=256)
+                frames_p = [f.quantize(palette=palette) for f in frames]
+                buf = io.BytesIO()
+                if len(frames_p) == 1:
+                    frames_p[0].save(buf, format="GIF", loop=0, disposal=2)
+                else:
+                    frames_p[0].save(
+                        buf,
+                        format="GIF",
+                        save_all=True,
+                        append_images=frames_p[1:],
+                        loop=0,
+                        duration=durations,
+                        disposal=2,
+                    )
+                os.makedirs(cache_dir, exist_ok=True)
+                with open(gif_path, "wb") as f:
+                    f.write(buf.getvalue())
+
+            await self.hass.async_add_executor_job(_render_and_cache)
+            _LOGGER.info("display_now_playing: rendered and cached (%s)", cache_key[:8])
+        else:
+            _LOGGER.info("display_now_playing: cache hit (%s)", cache_key[:8])
+
+        if not await self._upload_gif(gif_path):
+            return
+
+        attrs = {
+            "media_entity": entity_id,
+            "media_title": track,
+            "media_artist": artist,
+        }
+
+        if set_default:
+            self._default_mode = DISPLAY_MODE_NOW_PLAYING
+            self._default_attrs = {"entity_id": entity_id}
+            await self._save()
+
+        if display_for:
+            self.schedule_revert(display_for)
+        else:
+            self.cancel_revert()
+
+        self._mark_updated(DISPLAY_MODE_NOW_PLAYING, attrs)
+        _LOGGER.info("display_now_playing: uploaded — %s by %s", track, artist)
+
+    async def do_display_image(
         self,
         path: str,
-        rotation_interval: int = 5,
+        display_for: float | None = None,
+        set_default: bool = True,
     ) -> None:
-        """Display GIF(s) on the device.
+        """Crop/resize any image or GIF to 64×64 and upload."""
+        if not os.path.exists(path):
+            _LOGGER.error("display_image: file not found: %s", path)
+            return
 
-        Args:
-            path: Path to a single GIF file or a folder containing GIF files.
-            rotation_interval: Carousel interval in seconds - how long each GIF
-                               displays before advancing to the next (batch mode).
-                               Common values: 5, 10, 30, 60, 300. Defaults to 5.
-        """
-        # Stop any existing rotation
-        await self.async_stop_gif_rotation()
+        stat = os.stat(path)
+        cache_dir = self._gif_cache_dir()
+        cache_key = hashlib.md5(f"{path}:{stat.st_mtime}".encode()).hexdigest()
+        gif_path = os.path.join(cache_dir, f"{cache_key}.gif")
 
-        screen_size = int(self.text_settings.get("screen_size", 32))
-        # Clamp interval to uint8 range
-        interval = max(1, min(255, int(rotation_interval)))
+        if not os.path.exists(gif_path):
+            def _process() -> None:
+                with PilImage.open(path) as src:
+                    is_anim = getattr(src, "n_frames", 1) > 1
+                    default_delay = src.info.get("duration", 100)
+                    frames, durations = [], []
+                    try:
+                        while True:
+                            frame = _crop_and_resize(src.copy().convert("RGB"), SCREEN_SIZE)
+                            frames.append(frame)
+                            durations.append(src.info.get("duration", default_delay))
+                            if not is_anim:
+                                break
+                            src.seek(src.tell() + 1)
+                    except EOFError:
+                        pass
 
-        # Check path type in executor to avoid blocking
-        is_file = await self.hass.async_add_executor_job(os.path.isfile, path)
-        is_dir = await self.hass.async_add_executor_job(os.path.isdir, path)
-
-        # Determine if path is a file or directory
-        if is_file:
-            # Single file: use single upload protocol (index=0x0d, no batch
-            # commands).  This gives the device its full GIF buffer instead of
-            # the smaller per-slot batch buffer (~7 KB).
-            _LOGGER.debug(f"Uploading single GIF (single protocol): {path}")
-            success = await IDMGif().uploadSingleRaw(path)
-            if not success:
-                _LOGGER.error(f"Single GIF upload failed: {path}")
-        elif is_dir:
-            # Folder mode - find all GIF files (in executor to avoid blocking)
-            def find_gifs(folder):
-                files = [
-                    os.path.join(folder, f)
-                    for f in os.listdir(folder)
-                    if f.lower().endswith(".gif")
-                ]
-                random.shuffle(files)
-                return files
-
-            gif_files = await self.hass.async_add_executor_job(find_gifs, path)
-
-            if not gif_files:
-                _LOGGER.warning(f"No GIF files found in {path}")
-                return
-
-            # Batch upload (works for 1 or many)
-            batch = gif_files[:12]
-            _LOGGER.debug(
-                f"Batch uploading {len(batch)} GIFs from "
-                f"{len(gif_files)} available, interval={interval}s"
-            )
-            success = await IDMGif().uploadBatch(
-                batch, pixel_size=screen_size, interval=interval, raw=True
-            )
-            if not success:
-                _LOGGER.error("Batch GIF upload failed")
-        else:
-            _LOGGER.error(f"Path does not exist: {path}")
-
-    async def _upload_gif(self, file_path: str, pixel_size: int) -> bool:
-        """Upload a single GIF to the device with retry logic."""
-        max_retries = 3
-
-        for attempt in range(max_retries):
-            try:
-                # Check if connection manager has a connected client
-                conn = ConnectionManager()
-                if conn.client and not conn.client.is_connected:
-                    _LOGGER.warning("Device disconnected, attempting reconnect...")
-
-                gif_instance = IDMGif()
-                result = await gif_instance.uploadProcessed(file_path, pixel_size=pixel_size)
-                if result:
-                    _LOGGER.debug(f"Successfully uploaded GIF: {file_path}")
-                    return True
-                else:
-                    _LOGGER.warning(f"Upload returned false for: {file_path}")
-
-            except asyncio.TimeoutError:
-                _LOGGER.warning(f"Timeout uploading GIF (attempt {attempt + 1}/{max_retries}): {file_path}")
-            except BleakError as e:
-                _LOGGER.warning(f"Bluetooth error (attempt {attempt + 1}/{max_retries}): {e}")
-            except Exception as e:
-                _LOGGER.warning(f"Error (attempt {attempt + 1}/{max_retries}): {e}")
-
-            # Wait before retry (except on last attempt)
-            if attempt < max_retries - 1:
-                _LOGGER.info(f"Retrying upload in 2 seconds...")
-                await asyncio.sleep(2)
-
-        _LOGGER.error(f"Failed to upload GIF after {max_retries} attempts: {file_path}")
-        return False
-
-    async def _gif_rotation_loop(
-        self,
-        gif_files: list[str],
-        interval: float,
-        loop: bool,
-        pixel_size: int,
-    ) -> None:
-        """Background task that rotates through GIFs."""
-        MAX_CONSECUTIVE_FAILURES = 3
-        consecutive_failures = 0
-
-        try:
-            index = 0
-            while True:
-                if self._gif_rotation_stop.is_set():
-                    _LOGGER.debug("GIF rotation stopped by request")
-                    break
-
-                gif_path = gif_files[index]
-                _LOGGER.debug(f"Displaying GIF {index + 1}/{len(gif_files)}: {gif_path}")
-
-                success = await self._upload_gif(gif_path, pixel_size)
-
-                if success:
-                    consecutive_failures = 0
-                else:
-                    consecutive_failures += 1
-                    _LOGGER.warning(
-                        f"GIF upload failed ({consecutive_failures}/{MAX_CONSECUTIVE_FAILURES}): {gif_path}"
-                    )
-
-                    if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
-                        _LOGGER.error(
-                            "GIF rotation stopped: too many consecutive failures. "
-                            "Device may be offline or unreachable."
-                        )
-                        break
-
-                index += 1
-                if index >= len(gif_files):
-                    if loop:
-                        index = 0
-                        random.shuffle(gif_files)  # Reshuffle for next cycle
-                        _LOGGER.debug("GIF rotation: reshuffled for next cycle")
+                    palette = frames[0].quantize(colors=256)
+                    frames_p = [f.quantize(palette=palette) for f in frames]
+                    buf = io.BytesIO()
+                    if len(frames_p) == 1:
+                        frames_p[0].save(buf, format="GIF", loop=0, disposal=2)
                     else:
-                        _LOGGER.debug("GIF rotation completed (non-looping)")
-                        break
+                        frames_p[0].save(
+                            buf,
+                            format="GIF",
+                            save_all=True,
+                            append_images=frames_p[1:],
+                            loop=0,
+                            duration=durations,
+                            disposal=2,
+                        )
+                    os.makedirs(cache_dir, exist_ok=True)
+                    with open(gif_path, "wb") as f:
+                        f.write(buf.getvalue())
 
-                # Wait for the interval or until stopped
-                try:
-                    await asyncio.wait_for(
-                        self._gif_rotation_stop.wait(),
-                        timeout=interval
-                    )
-                    # If we get here, stop was requested
-                    _LOGGER.debug("GIF rotation stopped during wait")
-                    break
-                except asyncio.TimeoutError:
-                    # Normal timeout, continue to next GIF
-                    pass
+            await self.hass.async_add_executor_job(_process)
 
-        except asyncio.CancelledError:
-            _LOGGER.debug("GIF rotation task cancelled")
-        except Exception as e:
-            _LOGGER.error(f"Error in GIF rotation loop: {e}")
-        finally:
-            self._gif_rotation_task = None
+        if not await self._upload_gif(gif_path):
+            return
 
-    async def async_stop_gif_rotation(self) -> None:
-        """Stop the current GIF rotation if running."""
-        if self._gif_rotation_task is not None:
-            self._gif_rotation_stop.set()
-            self._gif_rotation_task.cancel()
-            try:
-                await self._gif_rotation_task
-            except asyncio.CancelledError:
-                pass
-            self._gif_rotation_task = None
-            _LOGGER.debug("GIF rotation stopped")
+        attrs = {"path": path}
+
+        if set_default:
+            self._default_mode = DISPLAY_MODE_IMAGE
+            self._default_attrs = {"path": path}
+            await self._save()
+
+        if display_for:
+            self.schedule_revert(display_for)
+        else:
+            self.cancel_revert()
+
+        self._mark_updated(DISPLAY_MODE_IMAGE, attrs)
+        _LOGGER.info("display_image: uploaded %s", path)
+
+    # ------------------------------------------------------------------
+    # Screen power and brightness
+
+    async def do_screen_on(self) -> None:
+        from .client.modules.common import Common
+        await Common().screenOn()
+        self.screen_on = True
+        self.async_set_updated_data(self.data or {"connected": False})
+
+    async def do_screen_off(self) -> None:
+        from .client.modules.common import Common
+        await Common().screenOff()
+        self.screen_on = False
+        self.async_set_updated_data(self.data or {"connected": False})
+
+    async def do_set_brightness(self, brightness_ha: int) -> None:
+        """Set brightness. brightness_ha is 0-255 (HA scale); device takes 5-100%."""
+        from .client.modules.common import Common
+        pct = max(5, round(brightness_ha / 255 * 100))
+        await Common().setBrightness(pct)
+        self.brightness = brightness_ha
+        await self._save()
+        self.async_set_updated_data(self.data or {"connected": False})

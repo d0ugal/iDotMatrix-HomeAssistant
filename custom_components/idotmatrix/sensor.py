@@ -1,15 +1,15 @@
-"""Sensors for iDotMatrix."""
+"""Sensor platform for iDotMatrix — BLE connectivity and last updated timestamp."""
 from __future__ import annotations
 
-from homeassistant.components.sensor import SensorEntity, SensorDeviceClass
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.util import dt as dt_util
 
-from .const import DOMAIN, CONF_MAC
+from .const import CONF_MAC, DOMAIN
 from .coordinator import IDotMatrixCoordinator
-from .entity import IDotMatrixEntity
-from .client.connectionManager import ConnectionManager
 
 
 async def async_setup_entry(
@@ -20,59 +20,48 @@ async def async_setup_entry(
     coordinator: IDotMatrixCoordinator = hass.data[DOMAIN][entry.entry_id]
     async_add_entities([
         IDotMatrixBLESensor(coordinator, entry),
-        IDotMatrixScreenSensor(coordinator, entry),
-        IDotMatrixLastRenderSensor(coordinator, entry),
+        IDotMatrixLastUpdatedSensor(coordinator, entry),
     ])
 
 
-class IDotMatrixBLESensor(IDotMatrixEntity, SensorEntity):
-    """BLE connection status."""
+class _IDotMatrixSensorBase(CoordinatorEntity[IDotMatrixCoordinator], SensorEntity):
+    _attr_has_entity_name = True
 
+    def __init__(
+        self, coordinator: IDotMatrixCoordinator, entry: ConfigEntry, key: str
+    ) -> None:
+        super().__init__(coordinator)
+        mac = entry.data[CONF_MAC]
+        self._attr_unique_id = f"{mac}_{key}"
+        self._attr_device_info = {"identifiers": {(DOMAIN, mac)}}
+
+
+class IDotMatrixBLESensor(_IDotMatrixSensorBase):
+    """Shows whether the BLE link to the device is currently active."""
+
+    _attr_device_class = SensorDeviceClass.CONNECTIVITY
     _attr_name = "BLE Connected"
-    _attr_icon = "mdi:bluetooth"
 
-    def __init__(self, coordinator, entry):
-        super().__init__(coordinator, entry)
-        self._attr_unique_id = f"{entry.data[CONF_MAC]}_ble_connected"
+    def __init__(self, coordinator: IDotMatrixCoordinator, entry: ConfigEntry) -> None:
+        super().__init__(coordinator, entry, "ble_connected")
 
     @property
     def native_value(self) -> str:
-        conn = ConnectionManager()
-        if conn and conn.client and conn.client.is_connected:
-            return "connected"
-        return "disconnected"
+        connected = (self.coordinator.data or {}).get("connected", False)
+        return "connected" if connected else "disconnected"
 
 
-class IDotMatrixScreenSensor(IDotMatrixEntity, SensorEntity):
-    """Whether the display is on or off."""
+class IDotMatrixLastUpdatedSensor(_IDotMatrixSensorBase):
+    """Timestamp of the last successful image upload to the display."""
 
-    _attr_name = "Screen"
-    _attr_icon = "mdi:monitor"
-
-    def __init__(self, coordinator, entry):
-        super().__init__(coordinator, entry)
-        self._attr_unique_id = f"{entry.data[CONF_MAC]}_screen"
-
-    @property
-    def native_value(self) -> str:
-        return "on" if self.coordinator.screen_on else "off"
-
-
-class IDotMatrixLastRenderSensor(IDotMatrixEntity, SensorEntity):
-    """Timestamp of the last successful moon render."""
-
-    _attr_name = "Last Render"
-    _attr_icon = "mdi:clock-outline"
     _attr_device_class = SensorDeviceClass.TIMESTAMP
+    _attr_name = "Last Updated"
 
-    def __init__(self, coordinator, entry):
-        super().__init__(coordinator, entry)
-        self._attr_unique_id = f"{entry.data[CONF_MAC]}_last_render"
+    def __init__(self, coordinator: IDotMatrixCoordinator, entry: ConfigEntry) -> None:
+        super().__init__(coordinator, entry, "last_updated")
 
     @property
     def native_value(self):
-        ts = self.coordinator.last_render_time
-        if ts is None:
-            return None
-        from homeassistant.util import dt as dt_util
-        return dt_util.parse_datetime(ts)
+        if self.coordinator.last_updated:
+            return dt_util.parse_datetime(self.coordinator.last_updated)
+        return None

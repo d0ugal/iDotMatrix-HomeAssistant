@@ -7,22 +7,20 @@
         }
     ],
     "codeowners": [
-        "@tukies"
+        "@d0ugal"
     ],
     "config_flow": true,
     "dependencies": [
-        "bluetooth",
-        "http",
-        "lovelace"
+        "bluetooth"
     ],
-    "documentation": "https://github.com/tukies/iDotMatrix-HomeAssistant",
+    "documentation": "https://github.com/d0ugal/iDotMatrix-HomeAssistant",
     "iot_class": "local_polling",
-    "issue_tracker": "https://github.com/tukies/iDotMatrix-HomeAssistant/issues",
+    "issue_tracker": "https://github.com/d0ugal/iDotMatrix-HomeAssistant/issues",
     "requirements": [
         "bleak==2.1.1",
         "Pillow==12.1.1",
         "bleak-retry-connector==4.4.3",
         "ephem==4.1.6"
     ],
-    "version": "1.0.0"
+    "version": "2.0.0"
 }

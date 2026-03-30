@@ -2,503 +2,104 @@
 from __future__ import annotations
 
 import logging
+
+import voluptuous as vol
+import homeassistant.helpers.config_validation as cv
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
-import os
-from homeassistant.components.http import StaticPathConfig
-from homeassistant.components.lovelace.const import CONF_RESOURCE_TYPE_WS, CONF_URL
-from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import config_validation as cv
 
-from .const import DOMAIN, CONF_MAC
-from .client.connectionManager import ConnectionManager
+from .const import CONF_MAC, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS: list[Platform] = [Platform.TEXT, Platform.SELECT, Platform.BUTTON, Platform.NUMBER, Platform.SWITCH, Platform.LIGHT, Platform.SENSOR]
+PLATFORMS: list[Platform] = [Platform.LIGHT, Platform.SENSOR]
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
-_CARD_URL_PATH = "/idotmatrix"
-_CARD_FILENAME = "idotmatrix-card.js"
-_CARD_RESOURCE_URL = f"{_CARD_URL_PATH}/{_CARD_FILENAME}"
+
+_SCHEMA_DISPLAY_MOON = vol.Schema({
+    vol.Optional("display_for"): vol.Coerce(float),
+})
+_SCHEMA_DISPLAY_NOW_PLAYING = vol.Schema({
+    vol.Required("entity_id"): cv.entity_id,
+    vol.Optional("display_for"): vol.Coerce(float),
+})
+_SCHEMA_DISPLAY_IMAGE = vol.Schema({
+    vol.Required("path"): cv.string,
+    vol.Optional("display_for"): vol.Coerce(float),
+})
+
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
-    """Set up the iDotMatrix component."""
     return True
 
 
-async def _async_register_lovelace_resource(hass: HomeAssistant) -> None:
-    """Register the Lovelace card resource in storage mode."""
-    domain_data = hass.data.setdefault(DOMAIN, {})
-    if not domain_data.get("_static_path_registered"):
-        www_path = os.path.join(os.path.dirname(__file__), "www")
-        await hass.http.async_register_static_paths(
-            [StaticPathConfig(_CARD_URL_PATH, www_path, not hass.config.debug)]
-        )
-        domain_data["_static_path_registered"] = True
-
-    lovelace_data = hass.data.get("lovelace")
-    if not lovelace_data:
-        # Lovelace not loaded
-        return
-
-    # Handle both old dict-style and new LovelaceData object
-    if hasattr(lovelace_data, "resources"):
-        resources = lovelace_data.resources
-    elif isinstance(lovelace_data, dict):
-        resources = lovelace_data.get("resources")
-    else:
-        return
-
-    if not resources or not hasattr(resources, "async_create_item"):
-        # Likely YAML mode
-        return
-
-    if not resources.loaded:
-        await resources.async_load()
-        resources.loaded = True
-
-    # Get version from manifest (use executor to avoid blocking)
-    def _read_manifest_version():
-        try:
-            import json
-            manifest_path = os.path.join(os.path.dirname(__file__), "manifest.json")
-            with open(manifest_path, 'r') as f:
-                manifest = json.load(f)
-                return manifest.get("version", "0.0.0")
-        except Exception:
-            return "0.0.0"
-
-    version = await hass.async_add_executor_job(_read_manifest_version)
-
-    # Append version to URL for cache busting
-    card_url = f"{_CARD_RESOURCE_URL}?v={version}"
-
-    existing = resources.async_items() or []
-    for item in existing:
-        if item.get(CONF_URL).startswith(_CARD_RESOURCE_URL):
-            # If URL matches (ignoring version query param) but full URL is different, update it
-            if item.get(CONF_URL) != card_url:
-                await resources.async_update_item(item["id"], {CONF_RESOURCE_TYPE_WS: "module", CONF_URL: card_url})
-                _LOGGER.info("Updated Lovelace resource to: %s", card_url)
-            return
-
-    await resources.async_create_item(
-        {CONF_RESOURCE_TYPE_WS: "module", CONF_URL: card_url}
-    )
-    _LOGGER.info("Registered Lovelace resource: %s", card_url)
-
-
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Set up iDotMatrix from a config entry."""
-    
+    from .coordinator import IDotMatrixCoordinator
+    from .client.connectionManager import ConnectionManager
+
     hass.data.setdefault(DOMAIN, {})
-    
-    # Initialize connection manager (singleton currently, might need adaptation per entry if multiple devices supported properly)
-    # For now, we store the address in the manager? Or pass it to entities?
-    # The client library assumes Singleton ConnectionManager. 
-    # We might need to refactor the client library eventually to support multiple instances.
-    # For now, we will assume one device per integration instance or update the singleton.
-    
-    hass.data[DOMAIN][entry.entry_id] = entry.data
-    
-    # Initialize the Singleton ConnectionManager with the device address
+
     manager = ConnectionManager()
     manager.set_hass(hass)
     manager.address = entry.data[CONF_MAC]
 
-    from .coordinator import IDotMatrixCoordinator
     coordinator = IDotMatrixCoordinator(hass, entry)
-    await coordinator.async_load_settings()
     await coordinator.async_config_entry_first_refresh()
-    
-    # Store coordinator instance
+    await coordinator.async_load_and_replay()
+
     hass.data[DOMAIN][entry.entry_id] = coordinator
-
-    async def _update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
-        await hass.config_entries.async_reload(entry.entry_id)
-
-    entry.async_on_unload(entry.add_update_listener(_update_listener))
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
-    # Automatically register the Lovelace card resource (storage mode only).
-    async def _on_homeassistant_started(event):
-        """Handle Home Assistant started event."""
-        await _async_register_lovelace_resource(hass)
+    # Services iterate all loaded coordinators so they work if multiple devices
+    # are ever added.
+    def _coordinators():
+        return [
+            c for c in hass.data.get(DOMAIN, {}).values()
+            if isinstance(c, IDotMatrixCoordinator)
+        ]
 
-    if hass.is_running:
-        await _async_register_lovelace_resource(hass)
-    else:
-        hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _on_homeassistant_started)
+    async def _display_moon(call) -> None:
+        display_for = call.data.get("display_for")
+        for coord in _coordinators():
+            await coord.do_display_moon(display_for=display_for)
 
-    async def async_set_face(call):
-        """Handle the set_face service call."""
-        face_config = call.data.get("face")
-        # For now, we apply to all coordinators or specify entry_id?
-        # Ideally, the card provides the entity or device, we resolve config entry.
-        # Simplification: Apply to the first found coordinator or all.
-        # But correct way is to target a device.
-        # Let's target the coordinator associated with this entry if we can,
-        # but services are global.
-        
-        # We'll just apply to all loaded coordinators for now or pass 'device_id'.
-        # Let's assume the user has one device for now or we iterate.
-        for entry_id, coordinator in hass.data[DOMAIN].items():
-            if isinstance(coordinator, IDotMatrixCoordinator):
-                await coordinator.async_set_face_config(face_config)
+    async def _display_now_playing(call) -> None:
+        display_for = call.data.get("display_for")
+        for coord in _coordinators():
+            await coord.do_display_now_playing(
+                call.data["entity_id"], display_for=display_for
+            )
 
-    hass.services.async_register(DOMAIN, "set_face", async_set_face)
+    async def _display_image(call) -> None:
+        display_for = call.data.get("display_for")
+        for coord in _coordinators():
+            await coord.do_display_image(call.data["path"], display_for=display_for)
 
-    # Register render_preview service for pixel-perfect preview
-    async def async_render_preview(call):
-        """Render face preview and return as base64 PNG."""
-        import base64
-        import io
-        
-        face_config = call.data.get("face", {})
-        screen_size = call.data.get("screen_size", 32)
-        layers = face_config.get("layers", [])
-        
-        # Find first coordinator
-        coordinator = None
-        for entry_id, c in hass.data[DOMAIN].items():
-            if isinstance(c, IDotMatrixCoordinator):
-                coordinator = c
-                break
-        
-        if not coordinator:
-            return {"error": "No coordinator found", "image": None}
-        
-        try:
-            # Render using the same Python/PIL renderer as device
-            image = await coordinator._render_face(layers, screen_size)
-            
-            # Convert to base64 PNG
-            buffer = io.BytesIO()
-            image.save(buffer, format="PNG")
-            buffer.seek(0)
-            b64_image = base64.b64encode(buffer.read()).decode("utf-8")
-            
-            return {"image": f"data:image/png;base64,{b64_image}"}
-        except Exception as e:
-            _LOGGER.error(f"Error rendering preview: {e}")
-            return {"error": str(e), "image": None}
-
-    hass.services.async_register(
-        DOMAIN, 
-        "render_preview", 
-        async_render_preview,
-        supports_response="only"  # This service returns data
-    )
-
-    # Register list_fonts service for dynamic font discovery
-    async def async_list_fonts(call):
-        """List all available fonts in the fonts directory."""
-        import os
-        
-        base_path = os.path.dirname(os.path.abspath(__file__))
-        fonts_dir = os.path.join(base_path, "fonts")
-        
-        def list_fonts_sync():
-            if not os.path.exists(fonts_dir):
-                return []
-            
-            result = []
-            for filename in sorted(os.listdir(fonts_dir)):
-                if filename.lower().endswith(('.otf', '.ttf', '.bdf')):
-                    # Create display name from filename
-                    name = filename.rsplit('.', 1)[0]
-                    # Convert to readable format (e.g., "Rain-DRM3" -> "Rain DRM3")
-                    display_name = name.replace('-', ' ').replace('_', ' ')
-                    result.append({
-                        "filename": filename,
-                        "name": display_name
-                    })
-            return result
-
-        fonts = await hass.async_add_executor_job(list_fonts_sync)
-        
-        return {"fonts": fonts}
-
-    hass.services.async_register(
-        DOMAIN, 
-        "list_fonts", 
-        async_list_fonts,
-        supports_response="only"
-    )
-
-    # Initialize Design Storage
-    from .storage import DesignStorage
-    storage = DesignStorage(hass)
-    await storage.async_load()
-    hass.data[DOMAIN]["storage"] = storage
-
-    # Register WebSocket commands
-    from homeassistant.components import websocket_api
-    
-    @websocket_api.websocket_command({
-        "type": "idotmatrix/list_designs",
-    })
-    @websocket_api.async_response
-    async def websocket_list_designs(hass, connection, msg):
-        """List all designs."""
-        designs = storage.get_designs()
-        connection.send_result(msg["id"], {"designs": designs})
-
-
-
-    @websocket_api.websocket_command({
-        "type": "idotmatrix/save_design",
-        "name": str,
-        "layers": list,
-    })
-    @websocket_api.async_response
-    async def websocket_save_design(hass, connection, msg):
-        """Save a design."""
-        storage.save_design(msg["name"], msg["layers"])
-        connection.send_result(msg["id"])
-
-    @websocket_api.websocket_command({
-        "type": "idotmatrix/delete_design",
-        "name": str,
-    })
-    @websocket_api.async_response
-    async def websocket_delete_design(hass, connection, msg):
-        """Delete a design."""
-        if storage.delete_design(msg["name"]):
-            connection.send_result(msg["id"])
-        else:
-            connection.send_error(msg["id"], "design_not_found", "Design not found")
-
-    websocket_api.async_register_command(hass, websocket_list_designs)
-
-    websocket_api.async_register_command(hass, websocket_save_design)
-    websocket_api.async_register_command(hass, websocket_delete_design)
-
-
-    async def async_set_saved_design(call):
-        """Set a saved design by name."""
-        design_name = call.data.get("name")
-        design = storage.get_design(design_name)
-        
-        if not design:
-            _LOGGER.error(f"Design '{design_name}' not found")
-            return
-
-        face_config = {"layers": design["layers"]}
-        
-        # Apply to all coordinators (similar logic to set_face)
-        for entry_id, coordinator in hass.data[DOMAIN].items():
-            if isinstance(coordinator, IDotMatrixCoordinator):
-                await coordinator.async_set_face_config(face_config)
-
-    hass.services.async_register(DOMAIN, "set_saved_design", async_set_saved_design)
-
-    # Register display_gif service
-    async def async_display_gif(call):
-        """Handle the display_gif service call."""
-        path = call.data.get("path")
-        rotation_interval = call.data.get("rotation_interval", 5)
-
-        if not path:
-            _LOGGER.error("display_gif service requires 'path' parameter")
-            return
-
-        # Apply to all coordinators
-        for entry_id, coordinator in hass.data[DOMAIN].items():
-            if isinstance(coordinator, IDotMatrixCoordinator):
-                await coordinator.async_display_gif(
-                    path=path,
-                    rotation_interval=rotation_interval,
-                )
-
-    hass.services.async_register(DOMAIN, "display_gif", async_display_gif)
-
-    # Register stop_gif_rotation service
-    async def async_stop_gif_rotation(call):
-        """Handle the stop_gif_rotation service call."""
-        for entry_id, coordinator in hass.data[DOMAIN].items():
-            if isinstance(coordinator, IDotMatrixCoordinator):
-                await coordinator.async_stop_gif_rotation()
-
-    hass.services.async_register(DOMAIN, "stop_gif_rotation", async_stop_gif_rotation)
-
-    async def async_send_image(call):
-        """Send a pre-rendered PNG directly to the display."""
-        from .client.modules.image import Image as IDMImage
-        from .const import DISPLAY_MODE_EXTERNAL
-        image_path = call.data.get("image_path")
-        if not image_path:
-            _LOGGER.error("send_image: image_path is required")
-            return
-        _LOGGER.info("send_image: uploading %s", image_path)
-        mode_ok = await IDMImage().setMode(1)
-        if not mode_ok:
-            _LOGGER.error("send_image: failed to enter image mode")
-            return
-        result = await IDMImage().uploadUnprocessed(image_path)
-        if result:
-            _LOGGER.info("send_image: upload complete")
-            # Prevent the coordinator from overwriting the image with clock mode.
-            for entry_id, coordinator in hass.data[DOMAIN].items():
-                if isinstance(coordinator, IDotMatrixCoordinator):
-                    coordinator.display_mode = DISPLAY_MODE_EXTERNAL
-        else:
-            _LOGGER.error("send_image: upload failed")
-
-    hass.services.async_register(DOMAIN, "send_image", async_send_image)
-
-    async def async_screen_off(call):
-        """Turn the display off."""
-        from .client.modules.common import Common
-        await Common().screenOff()
-        for entry_id, coordinator in hass.data[DOMAIN].items():
-            if isinstance(coordinator, IDotMatrixCoordinator):
-                coordinator.screen_on = False
-                coordinator.async_set_updated_data(coordinator.data)
-
-    async def async_screen_on(call):
-        """Turn the display on."""
-        from .client.modules.common import Common
-        await Common().screenOn()
-        for entry_id, coordinator in hass.data[DOMAIN].items():
-            if isinstance(coordinator, IDotMatrixCoordinator):
-                coordinator.screen_on = True
-                coordinator.async_set_updated_data(coordinator.data)
-
-    hass.services.async_register(DOMAIN, "screen_off", async_screen_off)
-    hass.services.async_register(DOMAIN, "screen_on", async_screen_on)
-
-    async def async_now_playing(call):
-        """Render album art + track/artist overlay and push to the display."""
-        import hashlib
-        import io
-        import aiohttp
-        from PIL import Image as PilImage
-        from .const import DISPLAY_MODE_NOW_PLAYING
-        from .client.modules.gif import Gif as IDMGif
-        from .overlay import render_now_playing_frames
-
-        entity_id = call.data.get("entity_id")
-        if not entity_id:
-            _LOGGER.error("now_playing: entity_id is required")
-            return
-
-        state = hass.states.get(entity_id)
-        if not state:
-            _LOGGER.error("now_playing: entity %s not found", entity_id)
-            return
-
-        track = state.attributes.get("media_title") or ""
-        artist = state.attributes.get("media_artist") or ""
-        entity_picture = state.attributes.get("entity_picture")
-
-        _LOGGER.info("now_playing: %s — %s (art=%s)", track, artist, entity_picture)
-
-        # Determine cache path — keyed by track + artist + art URL
-        cache_dir = hass.config.path(".storage", "idotmatrix_gif_cache")
-        cache_key = hashlib.md5(
-            f"{track}|{artist}|{entity_picture or ''}".encode()
-        ).hexdigest()
-        gif_path = os.path.join(cache_dir, f"{cache_key}.gif")
-
-        if os.path.exists(gif_path):
-            _LOGGER.info("now_playing: cache hit (%s)", cache_key[:8])
-        else:
-            # Fetch album art
-            def make_blank():
-                return PilImage.new("RGB", (64, 64), (0, 0, 0))
-
-            img = None
-            if entity_picture:
-                try:
-                    from homeassistant.helpers.aiohttp_client import async_get_clientsession
-                    session = async_get_clientsession(hass)
-                    url = entity_picture if entity_picture.startswith("http") else f"http://localhost:8123{entity_picture}"
-                    async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
-                        if resp.status == 200:
-                            data = await resp.read()
-                            img = await hass.async_add_executor_job(
-                                lambda: PilImage.open(io.BytesIO(data)).convert("RGB").resize((64, 64), PilImage.LANCZOS)
-                            )
-                except Exception as e:
-                    _LOGGER.warning("now_playing: failed to fetch album art: %s", e)
-
-            if img is None:
-                img = await hass.async_add_executor_job(make_blank)
-
-            # Render and save to cache
-            def render_and_cache():
-                frames_data = render_now_playing_frames(img, track, artist)
-                frames = [f for f, _ in frames_data]
-                durations = [d for _, d in frames_data]
-
-                palette_frame = frames[0].quantize(colors=256)
-                frames_p = [frames[0].quantize(palette=palette_frame)]
-                for f in frames[1:]:
-                    frames_p.append(f.quantize(palette=palette_frame))
-
-                buf = io.BytesIO()
-                if len(frames_p) == 1:
-                    frames_p[0].save(buf, format="GIF", loop=0, disposal=2)
-                else:
-                    frames_p[0].save(
-                        buf,
-                        format="GIF",
-                        save_all=True,
-                        append_images=frames_p[1:],
-                        loop=0,
-                        duration=durations,
-                        disposal=2,
-                    )
-                os.makedirs(cache_dir, exist_ok=True)
-                with open(gif_path, "wb") as f:
-                    f.write(buf.getvalue())
-
-            await hass.async_add_executor_job(render_and_cache)
-            _LOGGER.info("now_playing: rendered and cached (%s)", cache_key[:8])
-
-        ok = await IDMGif().uploadSingleRaw(gif_path)
-
-        if not ok:
-            _LOGGER.error("now_playing: GIF upload failed")
-            return
-
-        _LOGGER.info("now_playing: uploaded successfully")
-
-        # Set all coordinators to NOW_PLAYING and watch the entity
-        for entry_id, coordinator in hass.data[DOMAIN].items():
-            if isinstance(coordinator, IDotMatrixCoordinator):
-                coordinator.display_mode = DISPLAY_MODE_NOW_PLAYING
-                coordinator.set_now_playing_entity(entity_id)
-                coordinator.async_set_updated_data(coordinator.data)
-
-    hass.services.async_register(DOMAIN, "now_playing", async_now_playing)
-
-    async def async_refresh(call):
-        """Immediately re-render and push the current display mode to the device."""
-        for entry_id, coordinator in hass.data[DOMAIN].items():
-            if isinstance(coordinator, IDotMatrixCoordinator):
-                await coordinator.async_update_device()
-
-    hass.services.async_register(DOMAIN, "refresh", async_refresh)
+    if not hass.services.has_service(DOMAIN, "display_moon"):
+        hass.services.async_register(DOMAIN, "display_moon", _display_moon, _SCHEMA_DISPLAY_MOON)
+        hass.services.async_register(DOMAIN, "display_now_playing", _display_now_playing, _SCHEMA_DISPLAY_NOW_PLAYING)
+        hass.services.async_register(DOMAIN, "display_image", _display_image, _SCHEMA_DISPLAY_IMAGE)
 
     return True
 
+
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Unload a config entry."""
+    from .coordinator import IDotMatrixCoordinator
+
     coordinator = hass.data.get(DOMAIN, {}).get(entry.entry_id)
     if coordinator:
-        if hasattr(coordinator, "_clear_face_tracking"):
-            coordinator._clear_face_tracking()
-        if hasattr(coordinator, "_cancel_moon_timer"):
-            coordinator._cancel_moon_timer()
-        if hasattr(coordinator, "_cancel_now_playing_listener"):
-            coordinator._cancel_now_playing_listener()
-        if hasattr(coordinator, "async_stop_gif_rotation"):
-            await coordinator.async_stop_gif_rotation()
+        coordinator.cancel_revert()
+
     if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
         hass.data[DOMAIN].pop(entry.entry_id)
+
+    # Remove services only when the last entry is gone
+    if not any(
+        isinstance(c, IDotMatrixCoordinator)
+        for c in hass.data.get(DOMAIN, {}).values()
+    ):
+        for svc in ("display_moon", "display_now_playing", "display_image"):
+            hass.services.async_remove(DOMAIN, svc)
 
     return unload_ok
