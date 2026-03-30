@@ -200,11 +200,23 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
         return self.hass.config.path(".storage", "idotmatrix_gif_cache")
 
     async def _upload_gif(self, gif_path: str) -> bool:
+        from .client.connectionManager import ConnectionManager
         from .client.modules.gif import Gif as IDMGif
 
         ok = await IDMGif().uploadSingleRaw(gif_path)
         if not ok:
-            _LOGGER.error("GIF upload failed: %s", gif_path)
+            # GATT errors can leave the client in a stale connected state.
+            # Force a fresh connection and retry once.
+            _LOGGER.warning("GIF upload failed, forcing reconnect and retrying: %s", gif_path)
+            conn = ConnectionManager()
+            try:
+                await conn.disconnect()
+            except Exception:
+                pass
+            conn.client = None
+            ok = await IDMGif().uploadSingleRaw(gif_path)
+        if not ok:
+            _LOGGER.error("GIF upload failed after retry: %s", gif_path)
         return ok
 
     # ------------------------------------------------------------------
