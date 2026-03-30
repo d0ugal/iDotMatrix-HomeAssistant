@@ -378,7 +378,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         from PIL import Image as PilImage
         from .const import DISPLAY_MODE_NOW_PLAYING
         from .client.modules.gif import Gif as IDMGif
-        from .overlay import apply_now_playing_overlay
+        from .overlay import render_now_playing_frames
 
         entity_id = call.data.get("entity_id")
         if not entity_id:
@@ -418,12 +418,31 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if img is None:
             img = await hass.async_add_executor_job(make_blank)
 
-        # Apply text overlay and convert to GIF
+        # Build animated (or static) GIF with scrolling text overlay
         def render_gif():
-            apply_now_playing_overlay(img, track, artist)
-            gif_img = img.quantize(colors=256)
+            frames_data = render_now_playing_frames(img, track, artist)
+            frames = [f for f, _ in frames_data]
+            durations = [d for _, d in frames_data]
+
+            # Quantize all frames to a shared palette
+            palette_frame = frames[0].quantize(colors=256)
+            frames_p = [frames[0].quantize(palette=palette_frame)]
+            for f in frames[1:]:
+                frames_p.append(f.quantize(palette=palette_frame))
+
             buf = io.BytesIO()
-            gif_img.save(buf, format="GIF", loop=0, disposal=2)
+            if len(frames_p) == 1:
+                frames_p[0].save(buf, format="GIF", loop=0, disposal=2)
+            else:
+                frames_p[0].save(
+                    buf,
+                    format="GIF",
+                    save_all=True,
+                    append_images=frames_p[1:],
+                    loop=0,
+                    duration=durations,
+                    disposal=2,
+                )
             return buf.getvalue()
 
         gif_data = await hass.async_add_executor_job(render_gif)
