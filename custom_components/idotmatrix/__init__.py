@@ -370,6 +370,90 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.services.async_register(DOMAIN, "screen_off", async_screen_off)
     hass.services.async_register(DOMAIN, "screen_on", async_screen_on)
 
+    async def async_now_playing(call):
+        """Render album art + track/artist overlay and push to the display."""
+        import io
+        import tempfile
+        import aiohttp
+        from PIL import Image as PilImage
+        from .const import DISPLAY_MODE_NOW_PLAYING
+        from .client.modules.gif import Gif as IDMGif
+        from .overlay import apply_now_playing_overlay
+
+        entity_id = call.data.get("entity_id")
+        if not entity_id:
+            _LOGGER.error("now_playing: entity_id is required")
+            return
+
+        state = hass.states.get(entity_id)
+        if not state:
+            _LOGGER.error("now_playing: entity %s not found", entity_id)
+            return
+
+        track = state.attributes.get("media_title") or ""
+        artist = state.attributes.get("media_artist") or ""
+        entity_picture = state.attributes.get("entity_picture")
+
+        _LOGGER.info("now_playing: %s — %s (art=%s)", track, artist, entity_picture)
+
+        def make_blank():
+            return PilImage.new("RGB", (64, 64), (0, 0, 0))
+
+        # Fetch album art
+        img = None
+        if entity_picture:
+            try:
+                from homeassistant.helpers.aiohttp_client import async_get_clientsession
+                session = async_get_clientsession(hass)
+                url = entity_picture if entity_picture.startswith("http") else f"http://localhost:8123{entity_picture}"
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                    if resp.status == 200:
+                        data = await resp.read()
+                        img = await hass.async_add_executor_job(
+                            lambda: PilImage.open(io.BytesIO(data)).convert("RGB").resize((64, 64), PilImage.LANCZOS)
+                        )
+            except Exception as e:
+                _LOGGER.warning("now_playing: failed to fetch album art: %s", e)
+
+        if img is None:
+            img = await hass.async_add_executor_job(make_blank)
+
+        # Apply text overlay and convert to GIF
+        def render_gif():
+            apply_now_playing_overlay(img, track, artist)
+            gif_img = img.quantize(colors=256)
+            buf = io.BytesIO()
+            gif_img.save(buf, format="GIF", loop=0, disposal=2)
+            return buf.getvalue()
+
+        gif_data = await hass.async_add_executor_job(render_gif)
+
+        with tempfile.NamedTemporaryFile(suffix=".gif", delete=False) as tmp:
+            tmp.write(gif_data)
+            tmp_path = tmp.name
+
+        try:
+            ok = await IDMGif().uploadSingleRaw(tmp_path)
+        finally:
+            import os
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+
+        if not ok:
+            _LOGGER.error("now_playing: GIF upload failed")
+            return
+
+        _LOGGER.info("now_playing: uploaded successfully")
+
+        # Set all coordinators to NOW_PLAYING and watch the entity
+        for entry_id, coordinator in hass.data[DOMAIN].items():
+            if isinstance(coordinator, IDotMatrixCoordinator):
+                coordinator.display_mode = DISPLAY_MODE_NOW_PLAYING
+                coordinator.set_now_playing_entity(entity_id)
+                coordinator.async_set_updated_data(coordinator.data)
+
+    hass.services.async_register(DOMAIN, "now_playing", async_now_playing)
+
     async def async_refresh(call):
         """Immediately re-render and push the current display mode to the device."""
         for entry_id, coordinator in hass.data[DOMAIN].items():
@@ -388,6 +472,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             coordinator._clear_face_tracking()
         if hasattr(coordinator, "_cancel_moon_timer"):
             coordinator._cancel_moon_timer()
+        if hasattr(coordinator, "_cancel_now_playing_listener"):
+            coordinator._cancel_now_playing_listener()
         if hasattr(coordinator, "async_stop_gif_rotation"):
             await coordinator.async_stop_gif_rotation()
     if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):

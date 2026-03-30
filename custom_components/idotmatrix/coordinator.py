@@ -14,7 +14,7 @@ from homeassistant.helpers.update_coordinator import (
 )
 from homeassistant.helpers.event import async_track_state_change_event
 
-from .const import DOMAIN, CONF_DISPLAY_MODE, DISPLAY_MODE_DESIGN, DISPLAY_MODE_TEXT, DISPLAY_MODE_EXTERNAL, DISPLAY_MODE_MOON
+from .const import DOMAIN, CONF_DISPLAY_MODE, DISPLAY_MODE_DESIGN, DISPLAY_MODE_TEXT, DISPLAY_MODE_EXTERNAL, DISPLAY_MODE_MOON, DISPLAY_MODE_NOW_PLAYING
 from .client.connectionManager import ConnectionManager
 from bleak.exc import BleakError
 from .client.modules.text import Text
@@ -79,6 +79,9 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
 
         # Moon mode timer
         self._moon_timer_unsub = None
+
+        # Now playing state
+        self._now_playing_unsub = None
 
         # Display state tracking
         self.screen_on: bool = True
@@ -188,6 +191,31 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
             self._setup_moon_timer()
         else:
             self._cancel_moon_timer()
+        if mode != DISPLAY_MODE_NOW_PLAYING:
+            self._cancel_now_playing_listener()
+
+    def set_now_playing_entity(self, entity_id: str) -> None:
+        """Watch a media player entity and revert to moon when it stops playing."""
+        self._cancel_now_playing_listener()
+        self._now_playing_unsub = async_track_state_change_event(
+            self.hass,
+            [entity_id],
+            self._on_media_player_state_change,
+        )
+
+    def _cancel_now_playing_listener(self) -> None:
+        if self._now_playing_unsub:
+            self._now_playing_unsub()
+            self._now_playing_unsub = None
+
+    async def _on_media_player_state_change(self, event) -> None:
+        """Revert to moon when the tracked media player stops playing."""
+        new_state = event.data.get("new_state")
+        if new_state is None or new_state.state != "playing":
+            _LOGGER.info("Media player stopped — reverting to moon mode")
+            self._cancel_now_playing_listener()
+            await self.async_set_display_mode(DISPLAY_MODE_MOON)
+            await self.async_update_device()
 
     def _setup_moon_timer(self) -> None:
         """Start a 5-minute periodic timer to re-render the moon image."""
@@ -609,7 +637,7 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
 
     async def async_update_device(self) -> None:
         """Send current configuration to the device."""
-        if self.display_mode == DISPLAY_MODE_EXTERNAL:
+        if self.display_mode in (DISPLAY_MODE_EXTERNAL, DISPLAY_MODE_NOW_PLAYING):
             return
 
         if self.display_mode == DISPLAY_MODE_MOON:
