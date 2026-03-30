@@ -1,2 +1,2 @@
-from .common import Common
-from .gif import Gif
+from .common import Common as Common
+from .gif import Gif as Gif

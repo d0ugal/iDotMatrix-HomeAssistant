@@ -1,4 +1,5 @@
 """DataUpdateCoordinator for iDotMatrix — owns all display logic."""
+
 from __future__ import annotations
 
 import hashlib
@@ -35,9 +36,7 @@ def _crop_and_resize(img: PilImage.Image, size: int) -> PilImage.Image:
     m = min(w, h)
     left = (w - m) // 2
     top = (h - m) // 2
-    return img.crop((left, top, left + m, top + m)).resize(
-        (size, size), PilImage.LANCZOS
-    )
+    return img.crop((left, top, left + m, top + m)).resize((size, size), PilImage.LANCZOS)
 
 
 def _compute_moon_attrs(lat: str, lon: str, elev: int) -> dict:
@@ -120,6 +119,7 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
         """Poll BLE connection status."""
         try:
             from .client.connectionManager import ConnectionManager
+
             cm = ConnectionManager()
             connected = cm.client is not None and cm.client.is_connected
         except Exception:
@@ -140,11 +140,13 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
             await self._replay_default()
 
     async def _save(self) -> None:
-        await self._store.async_save({
-            "mode": self._default_mode,
-            "attrs": self._default_attrs,
-            "brightness": self.brightness,
-        })
+        await self._store.async_save(
+            {
+                "mode": self._default_mode,
+                "attrs": self._default_attrs,
+                "brightness": self.brightness,
+            }
+        )
 
     # ------------------------------------------------------------------
     # display_for timer
@@ -194,6 +196,7 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
 
     async def _upload_gif(self, gif_path: str) -> bool:
         from .client.modules.gif import Gif as IDMGif
+
         ok = await IDMGif().uploadSingleRaw(gif_path)
         if not ok:
             _LOGGER.error("GIF upload failed: %s", gif_path)
@@ -236,9 +239,7 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
         if not ok:
             return
 
-        moon_attrs = await self.hass.async_add_executor_job(
-            _compute_moon_attrs, lat, lon, elev
-        )
+        moon_attrs = await self.hass.async_add_executor_job(_compute_moon_attrs, lat, lon, elev)
 
         if set_default:
             self._default_mode = DISPLAY_MODE_MOON
@@ -265,8 +266,9 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
     ) -> None:
         """Fetch album art from a media player and upload as now-playing GIF."""
         import aiohttp
-        from .overlay import render_now_playing_frames
         from homeassistant.helpers.aiohttp_client import async_get_clientsession
+
+        from .overlay import render_now_playing_frames
 
         state = self.hass.states.get(entity_id)
         if not state:
@@ -278,15 +280,11 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
         entity_picture = state.attributes.get("entity_picture")
 
         if not entity_picture and not track and not artist:
-            _LOGGER.debug(
-                "display_now_playing: skipping %s — no artwork or metadata", entity_id
-            )
+            _LOGGER.debug("display_now_playing: skipping %s — no artwork or metadata", entity_id)
             return
 
         cache_dir = self._gif_cache_dir()
-        cache_key = hashlib.md5(
-            f"{track}|{artist}|{entity_picture or ''}".encode()
-        ).hexdigest()
+        cache_key = hashlib.md5(f"{track}|{artist}|{entity_picture or ''}".encode()).hexdigest()
         gif_path = os.path.join(cache_dir, f"{cache_key}.gif")
 
         if not os.path.exists(gif_path):
@@ -299,15 +297,15 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
                         if entity_picture.startswith("http")
                         else f"http://localhost:8123{entity_picture}"
                     )
-                    async with session.get(
-                        url, timeout=aiohttp.ClientTimeout(total=10)
-                    ) as resp:
+                    async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
                         if resp.status == 200:
                             raw = await resp.read()
                             img = await self.hass.async_add_executor_job(
-                                lambda: PilImage.open(io.BytesIO(raw))
-                                .convert("RGB")
-                                .resize((SCREEN_SIZE, SCREEN_SIZE), PilImage.LANCZOS)
+                                lambda: (
+                                    PilImage.open(io.BytesIO(raw))
+                                    .convert("RGB")
+                                    .resize((SCREEN_SIZE, SCREEN_SIZE), PilImage.LANCZOS)
+                                )
                             )
                 except Exception as exc:
                     _LOGGER.warning("display_now_playing: art fetch failed: %s", exc)
@@ -382,6 +380,7 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
         gif_path = os.path.join(cache_dir, f"{cache_key}.gif")
 
         if not os.path.exists(gif_path):
+
             def _process() -> None:
                 with PilImage.open(path) as src:
                     is_anim = getattr(src, "n_frames", 1) > 1
@@ -442,12 +441,14 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
 
     async def do_screen_on(self) -> None:
         from .client.modules.common import Common
+
         await Common().screenOn()
         self.screen_on = True
         self.async_set_updated_data(self.data or {"connected": False})
 
     async def do_screen_off(self) -> None:
         from .client.modules.common import Common
+
         await Common().screenOff()
         self.screen_on = False
         self.async_set_updated_data(self.data or {"connected": False})
@@ -455,6 +456,7 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
     async def do_set_brightness(self, brightness_ha: int) -> None:
         """Set brightness. brightness_ha is 0-255 (HA scale); device takes 5-100%."""
         from .client.modules.common import Common
+
         pct = max(5, round(brightness_ha / 255 * 100))
         await Common().setBrightness(pct)
         self.brightness = brightness_ha

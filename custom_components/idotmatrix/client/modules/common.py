@@ -1,7 +1,7 @@
-from ..connectionManager import ConnectionManager
-from datetime import datetime
 import logging
-from typing import Optional, Union, List
+from datetime import datetime
+
+from ..connectionManager import ConnectionManager
 
 
 class Common:
@@ -73,7 +73,7 @@ class Common:
             await self.conn.send(data=data)
         return data
 
-    async def flipScreen(self, flip: bool = True) -> Union[bool, bytearray]:
+    async def flipScreen(self, flip: bool = True) -> bool | bytearray:
         """Rotates the screen 180 degrees.
 
         Args:
@@ -100,7 +100,7 @@ class Common:
             self.logging.error(f"Could not rotate the screen of the device: {error}")
             return False
 
-    async def setBrightness(self, brightness_percent: int) -> Union[bool, bytearray]:
+    async def setBrightness(self, brightness_percent: int) -> bool | bytearray:
         """Set screen brightness. Range 5-100 (%).
 
         Args:
@@ -132,7 +132,7 @@ class Common:
             self.logging.error(f"Could not set the brightness of the screen: {error}")
             return False
 
-    async def setSpeed(self, speed: int) -> Union[bool, bytearray]:
+    async def setSpeed(self, speed: int) -> bool | bytearray:
         """Sets the speed of ? - not referenced anywhere in the iDotMatrix Android App.
 
         Args:
@@ -161,7 +161,7 @@ class Common:
 
     async def setTime(
         self, year: int, month: int, day: int, hour: int, minute: int, second: int
-    ) -> Optional[bytearray]:
+    ) -> bytearray | None:
         """Sets the date and time of the device.
 
         Args:
@@ -199,7 +199,7 @@ class Common:
             self.logging.error(f"Could not set the time of the device: {error}")
             return False
 
-    async def setJoint(self, mode: int) -> Union[bool, bytearray]:
+    async def setJoint(self, mode: int) -> bool | bytearray:
         """Currently no idea what this is doing.
 
         Args:
@@ -226,7 +226,7 @@ class Common:
             self.logging.error(f"Could not change the device joint: {error}")
             return False
 
-    async def setPassword(self, password: int) -> Union[bool, bytearray]:
+    async def setPassword(self, password: int) -> bool | bytearray:
         """Setting password: 6 digits in range 000000..999999. Reset device to clear.
 
         Args:
@@ -260,8 +260,7 @@ class Common:
             self.logging.error(f"Could not set the password: {error}")
             return False
 
-
-    async def reset(self) -> Union[bool, List[bytearray]]:
+    async def reset(self) -> bool | list[bytearray]:
         """Sends a command that resets the device and its internals.
         Can fix issues that appear over time.
 
@@ -276,7 +275,7 @@ class Common:
             reset_packets = [
                 bytes(bytearray.fromhex("04 00 03 80")),
                 bytes(bytearray.fromhex("05 00 04 80 50")),
-                ]
+            ]
             if self.conn:
                 for data in reset_packets:
                     await self.conn.connect()
@@ -285,4 +284,3 @@ class Common:
         except Exception as error:
             self.logging.error(f"Could not reset the device: {error}")
             return False
-

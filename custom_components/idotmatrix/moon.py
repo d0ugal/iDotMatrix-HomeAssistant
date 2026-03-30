@@ -3,6 +3,7 @@
 Ported from moon/render.py. Returns a PIL Image rather than writing files.
 Location and aurora state are injected at call time.
 """
+
 from __future__ import annotations
 
 import math
@@ -109,8 +110,8 @@ def _moon_colour(nx, ny, age, rotation=0.0):
     d = _terminator_d(nx_r, ny_r, age)
     blend = max(0.0, min(1.0, d * RADIUS / 1.5 + 0.5))
     tex = _load_texture()
-    tx = max(0, min(SIZE - 1, int(round(nx * RADIUS + CX))))
-    ty = max(0, min(SIZE - 1, int(round(ny * RADIUS + CY))))
+    tx = max(0, min(SIZE - 1, round(nx * RADIUS + CX)))
+    ty = max(0, min(SIZE - 1, round(ny * RADIUS + CY)))
     albedo = tex[tx, ty] / 255.0
     dark_scale = 0.28
     b = albedo * (dark_scale + blend * (1.0 - dark_scale))
@@ -171,9 +172,7 @@ def render_image(lat: str, lon: str, elev: int) -> Image.Image:
         for x in range(1, SIZE - 1):
             dx, dy = x - CX, y - CY
             if dx * dx + dy * dy <= RADIUS * RADIUS:
-                pix[x, y] = _moon_colour(
-                    ew * dx / RADIUS, dy / RADIUS, data["age"], ew * rotation
-                )
+                pix[x, y] = _moon_colour(ew * dx / RADIUS, dy / RADIUS, data["age"], ew * rotation)
 
     alt = data["alt"]
     ring_col = _ring_colour(alt)

@@ -1,4 +1,5 @@
 """Light platform for iDotMatrix — screen power and brightness."""
+
 from __future__ import annotations
 
 from homeassistant.components.light import ATTR_BRIGHTNESS, ColorMode, LightEntity
@@ -33,9 +34,7 @@ class IDotMatrixLight(CoordinatorEntity[IDotMatrixCoordinator], LightEntity):
     _attr_has_entity_name = True
     _attr_name = None  # use the device name as the entity name
 
-    def __init__(
-        self, coordinator: IDotMatrixCoordinator, entry: ConfigEntry
-    ) -> None:
+    def __init__(self, coordinator: IDotMatrixCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator)
         mac = entry.data[CONF_MAC]
         self._attr_unique_id = mac

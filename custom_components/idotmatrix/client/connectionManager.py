@@ -1,9 +1,9 @@
 import asyncio
-from bleak import BleakClient, BleakScanner, AdvertisementData
-from .const import UUID_READ_DATA, UUID_WRITE_DATA, BLUETOOTH_DEVICE_NAME
 import logging
-import time
-from typing import List, Optional
+
+from bleak import AdvertisementData, BleakClient, BleakScanner
+
+from .const import BLUETOOTH_DEVICE_NAME, UUID_READ_DATA, UUID_WRITE_DATA
 
 
 class SingletonMeta(type):
@@ -15,7 +15,7 @@ class SingletonMeta(type):
             try:
                 instance = super().__call__(*args, **kwargs)
                 cls._instances[cls] = instance
-            except:
+            except Exception:
                 # return None if wrong (or no arguments are given)
                 cls._instances[cls] = None
         return cls._instances[cls]
@@ -25,8 +25,8 @@ class ConnectionManager(metaclass=SingletonMeta):
     logging = logging.getLogger(__name__)
 
     def __init__(self) -> None:
-        self.address: Optional[str] = None
-        self.client: Optional[BleakClient] = None
+        self.address: str | None = None
+        self.client: BleakClient | None = None
         self.hass = None
 
     def set_hass(self, hass):
@@ -34,12 +34,12 @@ class ConnectionManager(metaclass=SingletonMeta):
         self.hass = hass
 
     @staticmethod
-    async def scan() -> List[tuple[str, str]]:
+    async def scan() -> list[tuple[str, str]]:
         # This basic scan might not find proxy devices if not integrated with HA scanning
         # But we primarily rely on HA config flow now.
         logging.info("scanning for iDotMatrix bluetooth devices...")
         devices = await BleakScanner.discover(return_adv=True)
-        filtered_devices: List[tuple[str, str]] = []
+        filtered_devices: list[tuple[str, str]] = []
         for key, (device, adv) in devices.items():
             if (
                 isinstance(adv, AdvertisementData)
@@ -72,11 +72,11 @@ class ConnectionManager(metaclass=SingletonMeta):
             try:
                 device = None
                 from bleak_retry_connector import establish_connection
-                
+
                 # Try to get device from HA Bluetooth coordinator
                 if self.hass:
                     from homeassistant.components import bluetooth
-                    
+
                     # Poll for device in HA cache (wait up to 15s)
                     # This allows time for Proxies to forward advertisements or local adapter to scan
                     for i in range(15):
@@ -87,24 +87,23 @@ class ConnectionManager(metaclass=SingletonMeta):
                             break
                         # Only sleep if we haven't found it yet
                         if i < 14:
-                             await asyncio.sleep(1.0)
-                
+                            await asyncio.sleep(1.0)
+
                 # If we have a device object, use establish_connection
                 if device:
                     self.logging.info(f"Connecting to {device.name} ({device.address})")
                     self.client = await establish_connection(
-                        BleakClient, 
-                        device, 
-                        self.address,
-                        max_attempts=3
+                        BleakClient, device, self.address, max_attempts=3
                     )
                 else:
                     # If device is not found in HA cache after polling, we cannot connect reliably.
                     # Fallback to direct client is unsafe in HA environment and usually fails with "No backend".
-                    self.logging.error(f"Device {self.address} unavailable in Home Assistant Bluetooth mesh. Ensure it is powered and within range of an adapter or proxy.")
+                    self.logging.error(
+                        f"Device {self.address} unavailable in Home Assistant Bluetooth mesh. Ensure it is powered and within range of an adapter or proxy."
+                    )
                     self.client = None
                     return
-                    
+
                 self.logging.info(f"connected to {self.address}")
             except Exception as e:
                 self.logging.error(f"Failed to connect to {self.address}: {e}")
@@ -127,10 +126,14 @@ class ConnectionManager(metaclass=SingletonMeta):
             # Cap chunk size to real BLE MTU regardless of proxy-reported size.
             # ESPHome BLE proxies report a large WiFi-based MTU, but the actual
             # BLE radio to the device uses ~509-byte packets at ~25ms intervals.
-            reported = self.client.services.get_characteristic(UUID_WRITE_DATA).max_write_without_response_size
+            reported = self.client.services.get_characteristic(
+                UUID_WRITE_DATA
+            ).max_write_without_response_size
             chunk_size = min(reported, self.BLE_WRITE_SIZE)
             for i in range(0, len(data), chunk_size):
-                await self.client.write_gatt_char(UUID_WRITE_DATA, data[i:i+chunk_size], response=response)
+                await self.client.write_gatt_char(
+                    UUID_WRITE_DATA, data[i : i + chunk_size], response=response
+                )
                 # Pace writes to match the BLE connection interval (~25ms).
                 # The Android app's BLE stack provides this pacing via L2CAP
                 # flow control; through an ESPHome proxy we must add it manually
@@ -139,7 +142,11 @@ class ConnectionManager(metaclass=SingletonMeta):
 
             return True
         else:
-            self.logging.error("send: not connected to device (client=%s, is_connected=%s)", self.client, self.client.is_connected if self.client else "N/A")
+            self.logging.error(
+                "send: not connected to device (client=%s, is_connected=%s)",
+                self.client,
+                self.client.is_connected if self.client else "N/A",
+            )
             return False
 
     async def read(self) -> bytes:

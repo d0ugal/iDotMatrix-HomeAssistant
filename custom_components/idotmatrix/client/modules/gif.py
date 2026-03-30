@@ -1,9 +1,10 @@
-from typing import Union, List
-from ..connectionManager import ConnectionManager
 import io
 import logging
-from PIL import Image as PilImage
 import zlib
+
+from PIL import Image as PilImage
+
+from ..connectionManager import ConnectionManager
 
 
 class Gif:
@@ -24,7 +25,7 @@ class Gif:
         with open(file_path, "rb") as file:
             return file.read()
 
-    def _splitIntoChunks(self, data: bytearray, chunk_size: int) -> List[bytearray]:
+    def _splitIntoChunks(self, data: bytearray, chunk_size: int) -> list[bytearray]:
         """Split the data into chunks of specified size.
 
         Args:
@@ -37,9 +38,8 @@ class Gif:
         return [data[i : i + chunk_size] for i in range(0, len(data), chunk_size)]
 
     def _createPayloads(
-        self, gif_data: bytearray, chunk_size: int = 4096, index: int = 0x0d,
-        interval: int = 5
-    ) -> List[bytearray]:
+        self, gif_data: bytearray, chunk_size: int = 4096, index: int = 0x0D, interval: int = 5
+    ) -> list[bytearray]:
         """Creates payloads from a GIF file.
 
         Args:
@@ -58,9 +58,9 @@ class Gif:
             [
                 255,  # [0:2] chunk_length (filled per chunk)
                 255,
-                1,    # [2] type: 1 = GIF
-                0,    # [3] reserved
-                0,    # [4] continuation: 0 = first, 2 = continuation
+                1,  # [2] type: 1 = GIF
+                0,  # [3] reserved
+                0,  # [4] continuation: 0 = first, 2 = continuation
                 255,  # [5:9] file_size (filled below)
                 255,
                 255,
@@ -70,7 +70,7 @@ class Gif:
                 255,
                 255,
                 interval & 0xFF,  # [13] carousel interval in seconds
-                0,    # [14] reserved
+                0,  # [14] reserved
                 index & 0xFF,  # [15] index: 0x0d for single, GIF index for batch
             ]
         )
@@ -78,7 +78,7 @@ class Gif:
         chunks = []
         gif_chunks = self._splitIntoChunks(gif_data, chunk_size)
         # set gif length
-        header[5:9] = int(len(gif_data)).to_bytes(4, byteorder="little")
+        header[5:9] = len(gif_data).to_bytes(4, byteorder="little")
         # set crc of gif
         crc = zlib.crc32(gif_data)
         header[9:13] = crc.to_bytes(4, byteorder="little")
@@ -93,7 +93,7 @@ class Gif:
             chunks.append(bytearray(header) + chunk)
         return chunks
 
-    async def uploadUnprocessed(self, file_path: str) -> Union[bool, bytearray]:
+    async def uploadUnprocessed(self, file_path: str) -> bool | bytearray:
         """uploads an image without further checks and resizes.
 
         Args:
@@ -114,8 +114,9 @@ class Gif:
             self.logging.error(f"could not upload gif unprocessed: {error}")
             return False
 
-    def _processGif(self, file_path: str, pixel_size: int = 32, index: int = 0x0d,
-                    interval: int = 5) -> Union[bool, List[bytearray]]:
+    def _processGif(
+        self, file_path: str, pixel_size: int = 32, index: int = 0x0D, interval: int = 5
+    ) -> bool | list[bytearray]:
         """Process a GIF file and create payloads (sync, for use in executor).
 
         Args:
@@ -135,9 +136,7 @@ class Gif:
                     while True:
                         frame = img.copy().convert("RGB")
                         if frame.size != (pixel_size, pixel_size):
-                            frame = frame.resize(
-                                (pixel_size, pixel_size), PilImage.NEAREST
-                            )
+                            frame = frame.resize((pixel_size, pixel_size), PilImage.NEAREST)
                         frames_rgb.append(frame)
                         img.seek(img.tell() + 1)
                 except EOFError:
@@ -167,9 +166,8 @@ class Gif:
             return False
 
     async def uploadProcessed(
-        self, file_path: str, pixel_size: int = 32, index: int = 0x0d,
-        interval: int = 5
-    ) -> Union[bool, bytearray]:
+        self, file_path: str, pixel_size: int = 32, index: int = 0x0D, interval: int = 5
+    ) -> bool | bytearray:
         """uploads a file processed to make sure everything is correct before uploading to the device.
 
         Args:
@@ -183,8 +181,11 @@ class Gif:
         """
         try:
             import asyncio
+
             loop = asyncio.get_event_loop()
-            data = await loop.run_in_executor(None, self._processGif, file_path, pixel_size, index, interval)
+            data = await loop.run_in_executor(
+                None, self._processGif, file_path, pixel_size, index, interval
+            )
 
             if data is False:
                 return False
@@ -224,7 +225,7 @@ class Gif:
 
             loop = asyncio.get_event_loop()
             gif_data = await loop.run_in_executor(None, self._load, file_path)
-            data = self._createPayloads(gif_data, index=0x0d)
+            data = self._createPayloads(gif_data, index=0x0D)
 
             for chunk in data:
                 # Use response=True for flow control through BLE proxy.
@@ -235,7 +236,9 @@ class Gif:
                     self.logging.error("Send failed during single GIF upload")
                     return False
 
-            self.logging.debug(f"Single GIF upload complete: {len(data)} chunks, {len(gif_data)} bytes")
+            self.logging.debug(
+                f"Single GIF upload complete: {len(data)} chunks, {len(gif_data)} bytes"
+            )
             return True
 
         except BaseException as error:
@@ -243,8 +246,7 @@ class Gif:
             return False
 
     async def uploadBatch(
-        self, file_paths: List[str], pixel_size: int = 32, interval: int = 5,
-        raw: bool = False
+        self, file_paths: list[str], pixel_size: int = 32, interval: int = 5, raw: bool = False
     ) -> bool:
         """Upload multiple GIFs as a batch using the device's batch protocol.
 
@@ -276,7 +278,7 @@ class Gif:
             await self.conn.connect()
 
             # 1. Send batch mode enable: 04 00 0a 01
-            batch_enable = bytearray([0x04, 0x00, 0x0a, 0x01])
+            batch_enable = bytearray([0x04, 0x00, 0x0A, 0x01])
             await self.conn.send(data=batch_enable)
             # Brief pause for device to process command
             await asyncio.sleep(0.1)
@@ -311,7 +313,9 @@ class Gif:
                         self.logging.error(f"Send failed at GIF {i}")
                         return False
 
-                self.logging.debug(f"GIF {i+1}/{count} uploaded ({len(data)} chunks, {'raw' if raw else 'processed'})")
+                self.logging.debug(
+                    f"GIF {i + 1}/{count} uploaded ({len(data)} chunks, {'raw' if raw else 'processed'})"
+                )
                 # Brief pause between GIF files (~100-150ms seen in Android capture)
                 if i < count - 1:
                     await asyncio.sleep(0.15)
