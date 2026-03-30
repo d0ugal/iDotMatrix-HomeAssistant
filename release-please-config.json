@@ -1,7 +1,7 @@
 {
   "packages": {
     ".": {
-      "release-type": "generic",
+      "release-type": "python",
       "extra-files": [
         {
           "type": "json",
