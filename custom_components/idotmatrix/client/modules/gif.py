@@ -25,25 +25,25 @@ class Gif:
         with open(file_path, "rb") as file:
             return file.read()
 
-    def _splitIntoChunks(self, data: bytearray, chunk_size: int) -> list[bytearray]:
+    def _splitIntoChunks(self, data: bytes | bytearray, chunk_size: int) -> list[bytearray]:
         """Split the data into chunks of specified size.
 
         Args:
-            data (bytearray): data to split into chunks
+            data (bytes | bytearray): data to split into chunks
             chunk_size (int): size of the chunks
 
         Returns:
             List[bytearray]: returns list with chunks of given data input
         """
-        return [data[i : i + chunk_size] for i in range(0, len(data), chunk_size)]
+        return [bytearray(data[i : i + chunk_size]) for i in range(0, len(data), chunk_size)]
 
     def _createPayloads(
-        self, gif_data: bytearray, chunk_size: int = 4096, index: int = 0x0D, interval: int = 5
+        self, gif_data: bytes | bytearray, chunk_size: int = 4096, index: int = 0x0D, interval: int = 5
     ) -> list[bytearray]:
         """Creates payloads from a GIF file.
 
         Args:
-            gif_data (bytearray): data of the gif file
+            gif_data (bytes | bytearray): data of the gif file
             chunk_size (int): size of a chunk
             index (int): GIF index byte. 0x0d (13) for single uploads,
                          0-11 for batch uploads.
@@ -93,14 +93,14 @@ class Gif:
             chunks.append(bytearray(header) + chunk)
         return chunks
 
-    async def uploadUnprocessed(self, file_path: str) -> bool | bytearray:
+    async def uploadUnprocessed(self, file_path: str) -> bool | list[bytearray]:
         """uploads an image without further checks and resizes.
 
         Args:
             file_path (str): path to the image file
 
         Returns:
-            Union[bool, bytearray]: False if there's an error, otherwise returns bytearray payload
+            Union[bool, list[bytearray]]: False if there's an error, otherwise returns list of payloads
         """
         try:
             gif_data = self._load(file_path)
@@ -116,7 +116,7 @@ class Gif:
 
     def _processGif(
         self, file_path: str, pixel_size: int = 32, index: int = 0x0D, interval: int = 5
-    ) -> bool | list[bytearray]:
+    ) -> list[bytearray] | None:
         """Process a GIF file and create payloads (sync, for use in executor).
 
         Args:
@@ -126,7 +126,7 @@ class Gif:
             interval (int): Carousel interval in seconds.
 
         Returns:
-            Union[bool, List[bytearray]]: False if error, otherwise list of payload chunks
+            list[bytearray] | None: None if error, otherwise list of payload chunks
         """
         try:
             with PilImage.open(file_path) as img:
@@ -163,11 +163,11 @@ class Gif:
                 return self._createPayloads(gif_buffer.getvalue(), index=index, interval=interval)
         except BaseException as error:
             self.logging.error(f"could not process gif: {error}")
-            return False
+            return None
 
     async def uploadProcessed(
         self, file_path: str, pixel_size: int = 32, index: int = 0x0D, interval: int = 5
-    ) -> bool | bytearray:
+    ) -> bool | list[bytearray]:
         """uploads a file processed to make sure everything is correct before uploading to the device.
 
         Args:
@@ -177,7 +177,7 @@ class Gif:
             interval (int): Carousel interval in seconds.
 
         Returns:
-            Union[bool, bytearray]: False if there's an error, otherwise returns bytearray payload
+            Union[bool, list[bytearray]]: False if there's an error, otherwise returns list of payloads
         """
         try:
             import asyncio
@@ -187,7 +187,7 @@ class Gif:
                 None, self._processGif, file_path, pixel_size, index, interval
             )
 
-            if data is False:
+            if data is None:
                 return False
 
             if self.conn:
@@ -303,7 +303,7 @@ class Gif:
                     data = await loop.run_in_executor(
                         None, self._processGif, file_path, pixel_size, i, interval
                     )
-                if data is False:
+                if data is None:
                     self.logging.error(f"Failed to process GIF {i}: {file_path}")
                     return False
 

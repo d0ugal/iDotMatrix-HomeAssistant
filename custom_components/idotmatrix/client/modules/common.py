@@ -197,7 +197,7 @@ class Common:
             return data
         except Exception as error:
             self.logging.error(f"Could not set the time of the device: {error}")
-            return False
+            return None
 
     async def setJoint(self, mode: int) -> bool | bytearray:
         """Currently no idea what this is doing.
@@ -273,8 +273,8 @@ class Common:
         """
         try:
             reset_packets = [
-                bytes(bytearray.fromhex("04 00 03 80")),
-                bytes(bytearray.fromhex("05 00 04 80 50")),
+                bytearray.fromhex("04 00 03 80"),
+                bytearray.fromhex("05 00 04 80 50"),
             ]
             if self.conn:
                 for data in reset_packets:

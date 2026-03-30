@@ -58,7 +58,7 @@ class ConnectionManager(metaclass=SingletonMeta):
         devices = await self.scan()
         if devices:
             # connect to first device
-            self.address = devices[0]
+            self.address = devices[0][0]
             await self.connect()
         else:
             self.logging.error("no target devices found.")
@@ -154,3 +154,4 @@ class ConnectionManager(metaclass=SingletonMeta):
             data = await self.client.read_gatt_char(UUID_READ_DATA)
             self.logging.info("data received")
             return data
+        return b""

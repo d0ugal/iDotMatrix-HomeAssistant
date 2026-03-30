@@ -22,7 +22,6 @@ known-first-party = ["custom_components.idotmatrix"]
 [tool.pyright]
 pythonVersion = "3.12"
 include = ["custom_components/idotmatrix"]
-exclude = ["custom_components/idotmatrix/client"]
 typeCheckingMode = "basic"
 reportMissingImports = "warning"
 reportMissingModuleSource = "none"
