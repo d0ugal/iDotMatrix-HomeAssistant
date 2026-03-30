@@ -34,6 +34,12 @@ _SCHEMA_DISPLAY_IMAGE = vol.Schema(
         vol.Optional("display_for"): vol.Coerce(float),
     }
 )
+_SCHEMA_DISPLAY_EMOJI = vol.Schema(
+    {
+        vol.Required("emoji"): cv.string,
+        vol.Optional("display_for"): vol.Coerce(float),
+    }
+)
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
@@ -80,12 +86,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         for coord in _coordinators():
             await coord.do_display_image(call.data["path"], display_for=display_for)
 
+    async def _display_emoji(call) -> None:
+        display_for = call.data.get("display_for")
+        for coord in _coordinators():
+            await coord.do_display_emoji(call.data["emoji"], display_for=display_for)
+
     if not hass.services.has_service(DOMAIN, "display_moon"):
         hass.services.async_register(DOMAIN, "display_moon", _display_moon, _SCHEMA_DISPLAY_MOON)
         hass.services.async_register(
             DOMAIN, "display_now_playing", _display_now_playing, _SCHEMA_DISPLAY_NOW_PLAYING
         )
         hass.services.async_register(DOMAIN, "display_image", _display_image, _SCHEMA_DISPLAY_IMAGE)
+        hass.services.async_register(DOMAIN, "display_emoji", _display_emoji, _SCHEMA_DISPLAY_EMOJI)
 
     return True
 
@@ -102,7 +114,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Remove services only when the last entry is gone
     if not any(isinstance(c, IDotMatrixCoordinator) for c in hass.data.get(DOMAIN, {}).values()):
-        for svc in ("display_moon", "display_now_playing", "display_image"):
+        for svc in ("display_moon", "display_now_playing", "display_image", "display_emoji"):
             hass.services.async_remove(DOMAIN, svc)
 
     return unload_ok

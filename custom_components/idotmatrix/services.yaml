@@ -1,80 +1,79 @@
-set_face:
-  name: Set face
-  description: Apply a layered face configuration from the designer.
+display_moon:
+  name: Display moon
+  description: Render the current moon phase and upload it to the display. Becomes the new default.
   fields:
-    face:
-      required: true
-      description: Face configuration with layers and optional trigger_entity.
-      example:
-        {
-          "layers": [
-            {
-              "id": "1",
-              "template": "{{ now().strftime('%H:%M') }}",
-              "x": 0,
-              "y": 8,
-              "color": [0, 255, 0],
-              "font_size": 10
-            }
-          ],
-          "trigger_entity": "sensor.time"
-        }
-      selector:
-        object:
-
-set_saved_design:
-  name: Set saved design
-  description: Apply a saved design by name.
-  fields:
-    name:
-      required: true
-      example: "My Design"
-      selector:
-        text:
-
-render_preview:
-  name: Render preview
-  description: Render a face preview image and return a base64 PNG.
-  fields:
-    face:
-      required: true
-      selector:
-        object:
-    screen_size:
+    display_for:
+      name: Display for
+      description: Revert to the previous default after this many seconds.
       required: false
-      example: 32
-      selector:
-        number:
-          min: 8
-          max: 64
-          mode: box
-
-list_fonts:
-  name: List fonts
-  description: Return available fonts for the designer.
-
-display_gif:
-  name: Display GIF
-  description: Display animated GIFs on the iDotMatrix device. Can show a single GIF or rotate through a folder of GIFs.
-  fields:
-    path:
-      required: true
-      description: Path to a GIF file or folder containing GIF files.
-      example: "/config/www/idotmatrix/gifs"
-      selector:
-        text:
-    rotation_interval:
-      required: false
-      description: Carousel interval - how long each GIF displays before advancing to the next (batch mode only). The device handles the rotation natively. Common values are 5, 10, 30, 60, or 300 seconds.
-      default: 5
-      example: 10
       selector:
         number:
           min: 1
-          max: 255
-          unit_of_measurement: seconds
           mode: box
+          unit_of_measurement: seconds
 
-stop_gif_rotation:
-  name: Stop GIF Rotation
-  description: Stop the current GIF rotation if one is running.
+display_now_playing:
+  name: Display now playing
+  description: Show album art with scrolling track/artist overlay from a media player. Becomes the new default.
+  fields:
+    entity_id:
+      name: Media player
+      description: The media player entity to read art and metadata from.
+      required: true
+      selector:
+        entity:
+          domain: media_player
+    display_for:
+      name: Display for
+      description: Revert to the previous default after this many seconds.
+      required: false
+      selector:
+        number:
+          min: 1
+          mode: box
+          unit_of_measurement: seconds
+
+display_image:
+  name: Display image
+  description: Upload any image or animated GIF. Centre-cropped and resized to 64×64. Becomes the new default unless display_for is set.
+  fields:
+    path:
+      name: Path
+      description: Absolute path to a PNG, JPG, or GIF file.
+      required: true
+      example: /config/www/doorbell.gif
+      selector:
+        text:
+    display_for:
+      name: Display for
+      description: Revert to the previous default after this many seconds.
+      required: false
+      selector:
+        number:
+          min: 1
+          mode: box
+          unit_of_measurement: seconds
+
+display_emoji:
+  name: Display emoji
+  description: >
+    Fetch a Twemoji image and display it at 64×64. Accepts the emoji character
+    directly (🔔) or its name with or without colons (bell or :bell:).
+    Result is cached on disk.
+  fields:
+    emoji:
+      name: Emoji
+      description: The emoji to display — character (🔔), name (bell), or colon-wrapped name (:bell:).
+      required: true
+      example: "bell"
+      selector:
+        text:
+    display_for:
+      name: Display for
+      description: Revert to the previous default after this many seconds.
+      required: false
+      selector:
+        number:
+          min: 1
+          mode: box
+          unit_of_measurement: seconds

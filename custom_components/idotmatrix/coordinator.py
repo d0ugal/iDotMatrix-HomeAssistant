@@ -18,6 +18,7 @@ from homeassistant.util import dt as dt_util
 from PIL import Image as PilImage
 
 from .const import (
+    DISPLAY_MODE_EMOJI,
     DISPLAY_MODE_IMAGE,
     DISPLAY_MODE_MOON,
     DISPLAY_MODE_NOW_PLAYING,
@@ -181,6 +182,10 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
             path = attrs.get("path")
             if path:
                 await self.do_display_image(path, set_default=False)
+        elif mode == DISPLAY_MODE_EMOJI:
+            char = attrs.get("char")
+            if char:
+                await self.do_display_emoji(char, set_default=False)
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -435,6 +440,94 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
 
         self._mark_updated(DISPLAY_MODE_IMAGE, attrs)
         _LOGGER.info("display_image: uploaded %s", path)
+
+    async def do_display_emoji(
+        self,
+        emoji_input: str,
+        display_for: float | None = None,
+        set_default: bool = True,
+    ) -> None:
+        """Fetch a Twemoji PNG, resize to 64×64, and upload."""
+        import aiohttp
+        import emoji as emoji_lib
+        from homeassistant.helpers.aiohttp_client import async_get_clientsession
+
+        # Resolve name → character. Accept: raw emoji ("🔔"), bare name ("bell"),
+        # or colon-wrapped name (":bell:") — all produce the same character.
+        raw = emoji_input.strip()
+        if emoji_lib.is_emoji(raw):
+            char = raw
+        else:
+            name = raw.strip(":")
+            char = emoji_lib.emojize(f":{name}:", language="alias")
+            if not emoji_lib.is_emoji(char):
+                _LOGGER.error("display_emoji: unknown emoji %r", emoji_input)
+                return
+
+        # Build Twemoji filename: codepoints joined by "-", skipping U+FE0F
+        # (variation selector-16) which Twemoji omits from most filenames.
+        codepoints = "-".join(f"{ord(c):x}" for c in char if c != "\ufe0f")
+        cache_dir = self._gif_cache_dir()
+        gif_path = os.path.join(cache_dir, f"emoji_{codepoints}.gif")
+
+        if not os.path.exists(gif_path):
+            base_url = "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72"
+            session = async_get_clientsession(self.hass)
+
+            png_data: bytes | None = None
+            for candidate in [codepoints, codepoints.replace("-fe0f", "")]:
+                try:
+                    async with session.get(
+                        f"{base_url}/{candidate}.png",
+                        timeout=aiohttp.ClientTimeout(total=10),
+                    ) as resp:
+                        if resp.status == 200:
+                            png_data = await resp.read()
+                            break
+                except Exception as exc:
+                    _LOGGER.debug("display_emoji: fetch attempt failed: %s", exc)
+
+            if not png_data:
+                _LOGGER.error(
+                    "display_emoji: could not fetch Twemoji for %r (%s)", char, codepoints
+                )
+                return
+
+            def _render() -> None:
+                img = PilImage.open(io.BytesIO(png_data)).convert("RGBA")
+                # Paste onto black background (GIF has no alpha)
+                bg = PilImage.new("RGB", img.size, (0, 0, 0))
+                bg.paste(img, mask=img.split()[3])
+                resized = bg.resize((SCREEN_SIZE, SCREEN_SIZE), PilImage.LANCZOS)
+                quantized = resized.quantize(colors=256)
+                buf = io.BytesIO()
+                quantized.save(buf, format="GIF", loop=0, disposal=2)
+                os.makedirs(cache_dir, exist_ok=True)
+                with open(gif_path, "wb") as f:
+                    f.write(buf.getvalue())
+
+            await self.hass.async_add_executor_job(_render)
+            _LOGGER.info("display_emoji: rendered and cached %r (%s)", char, codepoints)
+        else:
+            _LOGGER.info("display_emoji: cache hit %r (%s)", char, codepoints)
+
+        if not await self._upload_gif(gif_path):
+            return
+
+        attrs = {"char": char, "codepoints": codepoints}
+
+        if set_default:
+            self._default_mode = DISPLAY_MODE_EMOJI
+            self._default_attrs = {"char": char}
+            await self._save()
+
+        if display_for:
+            self.schedule_revert(display_for)
+        else:
+            self.cancel_revert()
+
+        self._mark_updated(DISPLAY_MODE_EMOJI, attrs)
+        _LOGGER.info("display_emoji: uploaded %r", char)
 
     # ------------------------------------------------------------------
     # Screen power and brightness

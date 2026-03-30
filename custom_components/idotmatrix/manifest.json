@@ -20,7 +20,8 @@
         "bleak==2.1.1",
         "Pillow==12.1.1",
         "bleak-retry-connector==4.4.3",
-        "ephem==4.1.6"
+        "ephem==4.1.6",
+        "emoji==2.14.1"
     ],
     "version": "2.0.0"
 }
