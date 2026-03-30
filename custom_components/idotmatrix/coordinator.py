@@ -277,6 +277,12 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
         artist = state.attributes.get("media_artist") or ""
         entity_picture = state.attributes.get("entity_picture")
 
+        if not entity_picture and not track and not artist:
+            _LOGGER.debug(
+                "display_now_playing: skipping %s — no artwork or metadata", entity_id
+            )
+            return
+
         cache_dir = self._gif_cache_dir()
         cache_key = hashlib.md5(
             f"{track}|{artist}|{entity_picture or ''}".encode()
