@@ -38,7 +38,11 @@ class Gif:
         return [bytearray(data[i : i + chunk_size]) for i in range(0, len(data), chunk_size)]
 
     def _createPayloads(
-        self, gif_data: bytes | bytearray, chunk_size: int = 4096, index: int = 0x0D, interval: int = 5
+        self,
+        gif_data: bytes | bytearray,
+        chunk_size: int = 4096,
+        index: int = 0x0D,
+        interval: int = 5,
     ) -> list[bytearray]:
         """Creates payloads from a GIF file.
 
