@@ -1,10 +1,14 @@
 {
-  "release-type": "generic",
-  "extra-files": [
-    {
-      "type": "json",
-      "path": "custom_components/idotmatrix/manifest.json",
-      "jsonpath": "$.version"
+  "packages": {
+    ".": {
+      "release-type": "generic",
+      "extra-files": [
+        {
+          "type": "json",
+          "path": "custom_components/idotmatrix/manifest.json",
+          "jsonpath": "$.version"
+        }
+      ]
     }
-  ]
+  }
 }
