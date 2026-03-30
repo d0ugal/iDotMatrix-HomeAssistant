@@ -26,3 +26,6 @@ exclude = ["custom_components/idotmatrix/client"]
 typeCheckingMode = "basic"
 reportMissingImports = "warning"
 reportMissingModuleSource = "none"
+# False positives — HA metaclass/domain= pattern can't be verified without HA stubs installed
+reportGeneralTypeIssues = "warning"
+reportCallIssue = "warning"
