@@ -40,7 +40,6 @@ class _IDotMatrixSensorBase(CoordinatorEntity[IDotMatrixCoordinator], SensorEnti
 class IDotMatrixBLESensor(_IDotMatrixSensorBase):
     """Shows whether the BLE link to the device is currently active."""
 
-    _attr_device_class = SensorDeviceClass.CONNECTIVITY
     _attr_name = "BLE Connected"
 
     def __init__(self, coordinator: IDotMatrixCoordinator, entry: ConfigEntry) -> None:
