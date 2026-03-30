@@ -22,7 +22,9 @@ known-first-party = ["custom_components.idotmatrix"]
 [tool.pyright]
 pythonVersion = "3.12"
 include = ["custom_components/idotmatrix"]
-exclude = ["custom_components/idotmatrix/client"]
 typeCheckingMode = "basic"
 reportMissingImports = "warning"
 reportMissingModuleSource = "none"
+# False positives — HA metaclass/domain= pattern can't be verified without HA stubs installed
+reportGeneralTypeIssues = "warning"
+reportCallIssue = "warning"
