@@ -17,7 +17,7 @@ SIZE = 64
 CX, CY = 31.5, 31.5
 RADIUS = 30
 
-BG = (5, 5, 10)
+BG = (0, 0, 0)
 RING_ON = (60, 60, 60)
 HORIZON_GLOW_DEG = 8
 
