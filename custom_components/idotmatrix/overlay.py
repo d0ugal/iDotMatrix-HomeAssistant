@@ -81,12 +81,13 @@ def _text_width(text: str) -> int:
 
 MAX_DISPLAY_CHARS = 20  # Hard cap: longer text gets truncated with ellipsis
 
+
 def truncate(text: str) -> str:
     """Truncate text to at most MAX_DISPLAY_CHARS, appending '...' if cut."""
     upper = text.upper()
     if len(upper) <= MAX_DISPLAY_CHARS:
         return upper
-    return upper[:MAX_DISPLAY_CHARS - 3] + "..."
+    return upper[: MAX_DISPLAY_CHARS - 3] + "..."
 
 
 def apply_now_playing_overlay(img: Image.Image, track: str, artist: str) -> Image.Image:
