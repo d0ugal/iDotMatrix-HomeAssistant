@@ -20,6 +20,8 @@ RADIUS = 30
 BG = (0, 0, 0)
 RING_ON = (60, 60, 60)
 HORIZON_GLOW_DEG = 8
+LUNAR_CYCLE = 29.53
+EVENT_LABEL_DAYS = 7  # show label only within this many days of an event
 
 # Set True when the display is on a north-facing wall (mirrors east↔west).
 MIRROR_EW = True
@@ -153,6 +155,59 @@ def _ring_colour(alt):
     return RING_ON
 
 
+# ── Event label ───────────────────────────────────────────────────────────────
+
+_GLYPHS: dict[str, list[int]] = {
+    "0": [0b111, 0b101, 0b101, 0b101, 0b111],
+    "1": [0b010, 0b110, 0b010, 0b010, 0b111],
+    "2": [0b111, 0b001, 0b111, 0b100, 0b111],
+    "3": [0b111, 0b001, 0b011, 0b001, 0b111],
+    "4": [0b101, 0b101, 0b111, 0b001, 0b001],
+    "5": [0b111, 0b100, 0b111, 0b001, 0b111],
+    "6": [0b111, 0b100, 0b111, 0b101, 0b111],
+    "7": [0b111, 0b001, 0b001, 0b001, 0b001],
+    "8": [0b111, 0b101, 0b111, 0b101, 0b111],
+    "9": [0b111, 0b101, 0b111, 0b001, 0b111],
+    "F": [0b111, 0b100, 0b110, 0b100, 0b100],
+    # N: diagonal stroke avoids confusion with M
+    "N": [0b101, 0b110, 0b101, 0b011, 0b101],
+}
+
+
+def _draw_label(pix, text: str, color: tuple[int, int, int]) -> None:
+    """Write a tiny 3×5 pixel label in the bottom-left corner."""
+    x0, y0 = 1, SIZE - 6
+    cx = x0
+    for ch in text:
+        rows = _GLYPHS.get(ch)
+        if rows is None:
+            cx += 4
+            continue
+        for row_i, bits in enumerate(rows):
+            for col_i in range(3):
+                if bits & (1 << (2 - col_i)):
+                    px, py = cx + col_i, y0 + row_i
+                    if 0 <= px < SIZE and 0 <= py < SIZE:
+                        pix[px, py] = color
+        cx += 4
+
+
+def _event_label(age: float) -> tuple[str, tuple[int, int, int]] | None:
+    """Return (label_text, color) if within EVENT_LABEL_DAYS of an event, else None."""
+    days_since_new = age % LUNAR_CYCLE
+    days_to_full = (LUNAR_CYCLE / 2 - days_since_new) % LUNAR_CYCLE
+    days_to_new = (LUNAR_CYCLE - days_since_new) % LUNAR_CYCLE
+    if days_to_full < days_to_new:
+        days = days_to_full
+        prefix, color = "F", (255, 200, 50)   # gold
+    else:
+        days = days_to_new
+        prefix, color = "N", (100, 180, 255)  # blue
+    if days > EVENT_LABEL_DAYS:
+        return None
+    return f"{prefix}{round(days)}", color
+
+
 # ── Public render function ─────────────────────────────────────────────────────
 
 
@@ -199,5 +254,9 @@ def render_image(lat: str, lon: str, elev: int) -> Image.Image:
         for y in range(y_start, SIZE):
             pix[0, y] = ring_col
             pix[SIZE - 1, y] = ring_col
+
+    label = _event_label(data["age"])
+    if label is not None:
+        _draw_label(pix, label[0], label[1])
 
     return img
