@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.1.1](https://github.com/d0ugal/iDotMatrix-HomeAssistant/compare/v2.1.0...v2.1.1) (2026-03-31)
+
+
+### Bug Fixes
+
+* cap display text at 20 chars with ellipsis ([352e15d](https://github.com/d0ugal/iDotMatrix-HomeAssistant/commit/352e15dbf12962c4b37ffc3237a25f97dd5fb99c))
+
+
+### Performance Improvements
+
+* reduce now-playing GIF size for reliable BLE transfer ([6403945](https://github.com/d0ugal/iDotMatrix-HomeAssistant/commit/640394564f4a20246cc976c3beed5f174b691379))
+
 ## [2.1.0](https://github.com/d0ugal/iDotMatrix-HomeAssistant/compare/v2.0.0...v2.1.0) (2026-03-30)
 
 
