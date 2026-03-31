@@ -208,6 +208,26 @@ def _event_label(age: float) -> tuple[str, tuple[int, int, int]] | None:
     return f"{prefix}{round(days)}", color
 
 
+# ── Cycle bar ─────────────────────────────────────────────────────────────────
+
+def _draw_cycle_bar(pix, age: float) -> None:
+    """Draw a 1-pixel-tall lunar cycle timeline across the top row.
+
+    Left edge = new moon, centre = full moon, right edge = next new moon.
+    A dim track fills the row; the full-moon midpoint gets a faint yellow tick;
+    the current position is a bright white pixel.
+    """
+    cycle_x = round((age % LUNAR_CYCLE) / LUNAR_CYCLE * (SIZE - 1))
+    full_x = SIZE // 2  # midpoint = full moon
+    for x in range(SIZE):
+        if x == cycle_x:
+            pix[x, 0] = (220, 220, 220)       # current position: white
+        elif x == full_x:
+            pix[x, 0] = (80, 76, 40)          # full-moon marker: dim gold
+        else:
+            pix[x, 0] = (30, 30, 30)          # track
+
+
 # ── Public render function ─────────────────────────────────────────────────────
 
 
@@ -258,5 +278,7 @@ def render_image(lat: str, lon: str, elev: int) -> Image.Image:
     label = _event_label(data["age"])
     if label is not None:
         _draw_label(pix, label[0], label[1])
+
+    _draw_cycle_bar(pix, data["age"])
 
     return img
