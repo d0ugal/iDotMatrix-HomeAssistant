@@ -147,7 +147,7 @@ def render_now_playing_frames(
     artist: str,
     frame_delay: int = 100,
     pause_ms: int = 2000,
-    scroll_speed: int = 2,
+    scroll_speed: int = 4,
 ) -> list[tuple[Image.Image, int]]:
     """Return (frame, duration_ms) pairs for now-playing display.
 
