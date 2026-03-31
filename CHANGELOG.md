@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.3.0](https://github.com/d0ugal/iDotMatrix-HomeAssistant/compare/v2.2.0...v2.3.0) (2026-03-31)
+
+
+### Features
+
+* add lunar cycle timeline bar along top row ([72a2566](https://github.com/d0ugal/iDotMatrix-HomeAssistant/commit/72a25667c193afd468e1d3ad4832a1147434f44b))
+
 ## [2.2.0](https://github.com/d0ugal/iDotMatrix-HomeAssistant/compare/v2.1.2...v2.2.0) (2026-03-31)
 
 
