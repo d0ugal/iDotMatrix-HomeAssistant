@@ -79,16 +79,14 @@ def _text_width(text: str) -> int:
     return len(text) * CHAR_ADVANCE - SPACING
 
 
+MAX_DISPLAY_CHARS = 20  # Hard cap: longer text gets truncated with ellipsis
+
 def truncate(text: str) -> str:
-    """Truncate text to fit within MAX_TEXT_WIDTH pixels."""
+    """Truncate text to at most MAX_DISPLAY_CHARS, appending '...' if cut."""
     upper = text.upper()
-    if _text_width(upper) <= MAX_TEXT_WIDTH:
+    if len(upper) <= MAX_DISPLAY_CHARS:
         return upper
-    # Trim char by char until it fits (accounts for unknown glyphs same width)
-    for i in range(len(upper), 0, -1):
-        if _text_width(upper[:i]) <= MAX_TEXT_WIDTH:
-            return upper[:i]
-    return ""
+    return upper[:MAX_DISPLAY_CHARS - 3] + "..."
 
 
 def apply_now_playing_overlay(img: Image.Image, track: str, artist: str) -> Image.Image:
