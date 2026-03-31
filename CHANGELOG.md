@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.2.0](https://github.com/d0ugal/iDotMatrix-HomeAssistant/compare/v2.1.2...v2.2.0) (2026-03-31)
+
+
+### Features
+
+* add event countdown label to moon display ([6347910](https://github.com/d0ugal/iDotMatrix-HomeAssistant/commit/6347910937c2312ef491196eddc977d676c743a5))
+
 ## [2.1.2](https://github.com/d0ugal/iDotMatrix-HomeAssistant/compare/v2.1.1...v2.1.2) (2026-03-31)
 
 
