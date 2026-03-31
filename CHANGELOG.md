@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.1.2](https://github.com/d0ugal/iDotMatrix-HomeAssistant/compare/v2.1.1...v2.1.2) (2026-03-31)
+
+
+### Bug Fixes
+
+* use pure black background to avoid RGB565 blue quantization artefact ([624dd55](https://github.com/d0ugal/iDotMatrix-HomeAssistant/commit/624dd55c77a92bb9118d164c61e6384edc599c04))
+
 ## [2.1.1](https://github.com/d0ugal/iDotMatrix-HomeAssistant/compare/v2.1.0...v2.1.1) (2026-03-31)
 
 
