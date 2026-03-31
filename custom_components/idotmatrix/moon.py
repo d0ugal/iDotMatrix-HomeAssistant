@@ -169,8 +169,8 @@ _GLYPHS: dict[str, list[int]] = {
     "8": [0b111, 0b101, 0b111, 0b101, 0b111],
     "9": [0b111, 0b101, 0b111, 0b001, 0b111],
     "F": [0b111, 0b100, 0b110, 0b100, 0b100],
-    # N: diagonal stroke avoids confusion with M
-    "N": [0b101, 0b110, 0b101, 0b011, 0b101],
+    # N: arch (∩) shape -- top bar + two vertical sides
+    "N": [0b111, 0b101, 0b101, 0b101, 0b101],
 }
 
 
