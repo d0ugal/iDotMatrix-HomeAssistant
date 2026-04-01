@@ -334,6 +334,10 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
                 frames_data = render_now_playing_frames(img, track, artist)
                 frames = [f for f, _ in frames_data]
                 durations = [d for _, d in frames_data]
+                _LOGGER.info(
+                    "display_now_playing: rendering '%s' by '%s' — %d frames",
+                    track, artist, len(frames),
+                )
                 palette = frames[0].quantize(colors=32)
                 frames_p = [f.quantize(palette=palette) for f in frames]
                 buf = io.BytesIO()
