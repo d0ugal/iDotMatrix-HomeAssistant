@@ -1,5 +1,23 @@
 # Changelog
 
+## [2.6.0](https://github.com/d0ugal/iDotMatrix-HomeAssistant/compare/v2.5.0...v2.6.0) (2026-04-01)
+
+
+### Features
+
+* add camera entity support to display_image service ([f54370d](https://github.com/d0ugal/iDotMatrix-HomeAssistant/commit/f54370dbbf9007f6e95d29dd65bea70fbaafe931))
+
+
+### Bug Fixes
+
+* bump bleak-retry-connector to 4.6.0 ([6556276](https://github.com/d0ugal/iDotMatrix-HomeAssistant/commit/65562760b5b7263c4049a6a9528fad841be81ead))
+
+
+### Documentation
+
+* add moon phase and now-playing preview images to README ([98028c9](https://github.com/d0ugal/iDotMatrix-HomeAssistant/commit/98028c9238b4fcb6da0c11bed792b8d6474ae67c))
+* fix album art for The Captain (Only Revolutions cover) ([8aeb09c](https://github.com/d0ugal/iDotMatrix-HomeAssistant/commit/8aeb09c1051df6ea7e5e5f9766c607b6bba45d11))
+
 ## [2.5.0](https://github.com/d0ugal/iDotMatrix-HomeAssistant/compare/v2.4.0...v2.5.0) (2026-04-01)
 
 
