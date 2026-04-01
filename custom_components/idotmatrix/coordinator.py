@@ -392,68 +392,124 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
 
     async def do_display_image(
         self,
-        path: str,
+        path: str | None = None,
+        entity_id: str | None = None,
         display_for: float | None = None,
         set_default: bool = True,
     ) -> None:
-        """Crop/resize any image or GIF to 64×64 and upload."""
-        if not os.path.exists(path):
-            _LOGGER.error("display_image: file not found: %s", path)
-            return
+        """Crop/resize any image or GIF to 64×64 and upload.
 
-        stat = os.stat(path)
+        Supply either `path` (local file) or `entity_id` (camera entity).
+        Camera snapshots are always fetched fresh and not cached.
+        """
+        import aiohttp
+        from homeassistant.helpers.aiohttp_client import async_get_clientsession
+
         cache_dir = self._gif_cache_dir()
-        cache_key = hashlib.md5(f"{path}:{stat.st_mtime}".encode()).hexdigest()
-        gif_path = os.path.join(cache_dir, f"{cache_key}.gif")
 
-        if not os.path.exists(gif_path):
-
-            def _process() -> None:
-                with PilImage.open(path) as src:
-                    is_anim = getattr(src, "n_frames", 1) > 1
-                    default_delay = src.info.get("duration", 100)
-                    frames, durations = [], []
-                    try:
-                        while True:
-                            frame = _crop_and_resize(src.copy().convert("RGB"), SCREEN_SIZE)
-                            frames.append(frame)
-                            durations.append(src.info.get("duration", default_delay))
-                            if not is_anim:
-                                break
-                            src.seek(src.tell() + 1)
-                    except EOFError:
-                        pass
-
-                    palette = frames[0].quantize(colors=256)
-                    frames_p = [f.quantize(palette=palette) for f in frames]
-                    buf = io.BytesIO()
-                    if len(frames_p) == 1:
-                        frames_p[0].save(buf, format="GIF", loop=0, disposal=2)
-                    else:
-                        frames_p[0].save(
-                            buf,
-                            format="GIF",
-                            save_all=True,
-                            append_images=frames_p[1:],
-                            loop=0,
-                            duration=durations,
-                            disposal=2,
+        if entity_id is not None:
+            # --- camera entity path: fetch snapshot, no caching ---
+            url = f"http://localhost:8123/api/camera_proxy/{entity_id}"
+            try:
+                session = async_get_clientsession(self.hass)
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                    if resp.status != 200:
+                        _LOGGER.error(
+                            "display_image: camera snapshot failed for %s (HTTP %s)",
+                            entity_id,
+                            resp.status,
                         )
-                    os.makedirs(cache_dir, exist_ok=True)
-                    with open(gif_path, "wb") as f:
-                        f.write(buf.getvalue())
+                        return
+                    raw = await resp.read()
+            except Exception as exc:
+                _LOGGER.error("display_image: camera snapshot error for %s: %s", entity_id, exc)
+                return
 
-            await self.hass.async_add_executor_job(_process)
+            def _process_camera() -> bytes:
+                img = PilImage.open(io.BytesIO(raw)).convert("RGB")
+                frame = _crop_and_resize(img, SCREEN_SIZE)
+                palette = frame.quantize(colors=256)
+                buf = io.BytesIO()
+                palette.save(buf, format="GIF", loop=0, disposal=2)
+                return buf.getvalue()
 
-        if not await self._upload_gif(gif_path):
-            return
+            gif_data = await self.hass.async_add_executor_job(_process_camera)
+            with tempfile.NamedTemporaryFile(suffix=".gif", delete=False) as tmp:
+                tmp.write(gif_data)
+                tmp_path = tmp.name
 
-        attrs = {"path": path}
+            try:
+                ok = await self._upload_gif(tmp_path)
+            finally:
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
 
-        if set_default and not display_for:
-            self._default_mode = DISPLAY_MODE_IMAGE
-            self._default_attrs = {"path": path}
-            await self._save()
+            if not ok:
+                return
+
+            attrs = {"entity_id": entity_id}
+            if set_default and not display_for:
+                self._default_mode = DISPLAY_MODE_IMAGE
+                self._default_attrs = {"entity_id": entity_id}
+                await self._save()
+
+        else:
+            # --- local file path: cache by mtime ---
+            if not os.path.exists(path):
+                _LOGGER.error("display_image: file not found: %s", path)
+                return
+
+            stat = os.stat(path)
+            cache_key = hashlib.md5(f"{path}:{stat.st_mtime}".encode()).hexdigest()
+            gif_path = os.path.join(cache_dir, f"{cache_key}.gif")
+
+            if not os.path.exists(gif_path):
+
+                def _process() -> None:
+                    with PilImage.open(path) as src:
+                        is_anim = getattr(src, "n_frames", 1) > 1
+                        default_delay = src.info.get("duration", 100)
+                        frames, durations = [], []
+                        try:
+                            while True:
+                                frame = _crop_and_resize(src.copy().convert("RGB"), SCREEN_SIZE)
+                                frames.append(frame)
+                                durations.append(src.info.get("duration", default_delay))
+                                if not is_anim:
+                                    break
+                                src.seek(src.tell() + 1)
+                        except EOFError:
+                            pass
+
+                        palette = frames[0].quantize(colors=256)
+                        frames_p = [f.quantize(palette=palette) for f in frames]
+                        buf = io.BytesIO()
+                        if len(frames_p) == 1:
+                            frames_p[0].save(buf, format="GIF", loop=0, disposal=2)
+                        else:
+                            frames_p[0].save(
+                                buf,
+                                format="GIF",
+                                save_all=True,
+                                append_images=frames_p[1:],
+                                loop=0,
+                                duration=durations,
+                                disposal=2,
+                            )
+                        os.makedirs(cache_dir, exist_ok=True)
+                        with open(gif_path, "wb") as f:
+                            f.write(buf.getvalue())
+
+                await self.hass.async_add_executor_job(_process)
+
+            if not await self._upload_gif(gif_path):
+                return
+
+            attrs = {"path": path}
+            if set_default and not display_for:
+                self._default_mode = DISPLAY_MODE_IMAGE
+                self._default_attrs = {"path": path}
+                await self._save()
 
         if display_for:
             self.schedule_revert(display_for)
@@ -461,7 +517,7 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
             self.cancel_revert()
 
         self._mark_updated(DISPLAY_MODE_IMAGE, attrs)
-        _LOGGER.info("display_image: uploaded %s", path)
+        _LOGGER.info("display_image: uploaded %s", entity_id or path)
 
     async def do_display_emoji(
         self,

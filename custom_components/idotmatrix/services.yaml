@@ -39,11 +39,18 @@ display_image:
   fields:
     path:
       name: Path
-      description: Absolute path to a PNG, JPG, or GIF file.
-      required: true
+      description: Absolute path to a PNG, JPG, or GIF file. Mutually exclusive with entity_id.
+      required: false
       example: /config/www/doorbell.gif
       selector:
         text:
+    entity_id:
+      name: Camera entity
+      description: A camera entity to snapshot and display. Mutually exclusive with path.
+      required: false
+      selector:
+        entity:
+          domain: camera
     display_for:
       name: Display for
       description: Revert to the previous default after this many seconds.

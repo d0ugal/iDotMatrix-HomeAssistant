@@ -30,7 +30,8 @@ _SCHEMA_DISPLAY_NOW_PLAYING = vol.Schema(
 )
 _SCHEMA_DISPLAY_IMAGE = vol.Schema(
     {
-        vol.Required("path"): cv.string,
+        vol.Exclusive("path", "source"): cv.string,
+        vol.Exclusive("entity_id", "source"): cv.entity_id,
         vol.Optional("display_for"): vol.Coerce(float),
     }
 )
@@ -84,7 +85,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     async def _display_image(call) -> None:
         display_for = call.data.get("display_for")
         for coord in _coordinators():
-            await coord.do_display_image(call.data["path"], display_for=display_for)
+            await coord.do_display_image(
+                path=call.data.get("path"),
+                entity_id=call.data.get("entity_id"),
+                display_for=display_for,
+            )
 
     async def _display_emoji(call) -> None:
         display_for = call.data.get("display_for")
