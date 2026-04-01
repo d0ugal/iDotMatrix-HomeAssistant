@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.3.2](https://github.com/d0ugal/iDotMatrix-HomeAssistant/compare/v2.3.1...v2.3.2) (2026-04-01)
+
+
+### Bug Fixes
+
+* dim event label colours to reduce distraction from moon ([25c652f](https://github.com/d0ugal/iDotMatrix-HomeAssistant/commit/25c652f9cefe87c168a6119e88fcde8380362031))
+
 ## [2.3.1](https://github.com/d0ugal/iDotMatrix-HomeAssistant/compare/v2.3.0...v2.3.1) (2026-04-01)
 
 
