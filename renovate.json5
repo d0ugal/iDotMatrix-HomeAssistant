@@ -5,6 +5,7 @@
   ],
   forkProcessing: 'enabled',
   automerge: true,
+  ignoreDeps: ['Pillow'],  // HA pins Pillow internally; upgrades always fail at runtime
   timezone: 'Europe/London',
   customManagers: [
     {
