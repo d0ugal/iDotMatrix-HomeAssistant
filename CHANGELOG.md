@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.3.1](https://github.com/d0ugal/iDotMatrix-HomeAssistant/compare/v2.3.0...v2.3.1) (2026-04-01)
+
+
+### Bug Fixes
+
+* remove min-1 and horizon glow from below-horizon rise bar ([fed26f8](https://github.com/d0ugal/iDotMatrix-HomeAssistant/commit/fed26f86d10a27db2138c59611745bbeb8fd2c01))
+
 ## [2.3.0](https://github.com/d0ugal/iDotMatrix-HomeAssistant/compare/v2.2.0...v2.3.0) (2026-03-31)
 
 
