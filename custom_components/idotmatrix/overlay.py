@@ -79,24 +79,18 @@ def _text_width(text: str) -> int:
     return len(text) * CHAR_ADVANCE - SPACING
 
 
-MAX_DISPLAY_CHARS = 20  # Hard cap: longer text gets truncated with ellipsis
-
-
-def truncate(text: str) -> str:
-    """Truncate text to at most MAX_DISPLAY_CHARS, appending '...' if cut."""
-    upper = text.upper()
-    if len(upper) <= MAX_DISPLAY_CHARS:
-        return upper
-    return upper[: MAX_DISPLAY_CHARS - 3] + "..."
+MAX_INPUT_CHARS = 32  # hard cap on input; anything beyond is ignored
+PAGE_CHARS = MAX_CHARS  # characters per page (= 15, fits display width)
 
 
 def apply_now_playing_overlay(img: Image.Image, track: str, artist: str) -> Image.Image:
     """Draw darkened background + white pixel-font track/artist text onto img.
 
-    Modifies img in place and returns it.
+    Modifies img in place and returns it. Expects pre-processed (uppercased,
+    page-sliced) strings; truncates silently to MAX_CHARS if needed.
     """
-    track_str = truncate(track)
-    artist_str = truncate(artist)
+    track_str = track.upper()[:MAX_CHARS]
+    artist_str = artist.upper()[:MAX_CHARS]
 
     if not track_str and not artist_str:
         return img
@@ -144,81 +138,32 @@ def render_now_playing_frames(
     base_img: Image.Image,
     track: str,
     artist: str,
-    frame_delay: int = 100,
-    pause_ms: int = 2000,
-    scroll_speed: int = 4,
+    page_delay: int = 3000,
 ) -> list[tuple[Image.Image, int]]:
     """Return (frame, duration_ms) pairs for now-playing display.
 
-    If both lines fit within MAX_TEXT_WIDTH, returns a single static frame.
-    Otherwise generates a scrolling animation: initial pause at the start of
-    the text, then scrolls left until the end of the longest line is visible,
-    then a shorter end-pause before looping.
+    Text is split into pages of PAGE_CHARS characters; both title and artist
+    advance to the next page together. Input is capped at MAX_INPUT_CHARS.
+    A single page produces one static frame; multiple pages cycle slowly.
     """
-    track_upper = track.upper()
-    artist_upper = artist.upper()
+    track_upper = track.upper()[:MAX_INPUT_CHARS]
+    artist_upper = artist.upper()[:MAX_INPUT_CHARS]
 
-    track_w = _text_width(track_upper)
-    artist_w = _text_width(artist_upper)
+    def _pages(text: str) -> list[str]:
+        if not text:
+            return [""]
+        return [text[i : i + PAGE_CHARS] for i in range(0, len(text), PAGE_CHARS)]
 
-    # Static: both lines fit without scrolling
-    if track_w <= MAX_TEXT_WIDTH and artist_w <= MAX_TEXT_WIDTH:
+    track_pages = _pages(track_upper)
+    artist_pages = _pages(artist_upper)
+    n_frames = max(len(track_pages), len(artist_pages))
+
+    frames = []
+    for i in range(n_frames):
+        t = track_pages[i] if i < len(track_pages) else ""
+        a = artist_pages[i] if i < len(artist_pages) else ""
         frame = base_img.copy()
-        apply_now_playing_overlay(frame, track, artist)
-        return [(frame, frame_delay)]
-
-    # Animated scroll
-    has_track = bool(track_upper)
-    has_artist = bool(artist_upper)
-    total_h = (LINE_SPACING if has_track else 0) + (GLYPH_H if has_artist else 0)
-
-    max_line_w = max(track_w, artist_w)
-    # Scroll just enough to reveal the full end of the longest line + one char gap
-    end_offset = -(max_line_w - MAX_TEXT_WIDTH + CHAR_ADVANCE)
-
-    def make_frame(offset: int) -> Image.Image:
-        frame = base_img.copy()
-        pix = frame.load()
-        # Darken a full-width strip behind the text area
-        for dy in range(-1, total_h + 1):
-            for dx in range(SIZE):
-                py = START_Y + dy
-                if 0 <= py < SIZE:
-                    r, g, b = pix[dx, py]
-                    pix[dx, py] = (r >> 2, g >> 2, b >> 2)
-
-        # Draw glyphs at scrolled x position
-        def draw_str(text: str, y: int) -> None:
-            cx = START_X + offset
-            for ch in text:
-                rows = GLYPHS.get(ch)
-                if rows is None:
-                    cx += CHAR_ADVANCE
-                    continue
-                for ri, rb in enumerate(rows):
-                    for col in range(GLYPH_W):
-                        if rb & (1 << (GLYPH_W - 1 - col)):
-                            px, py = cx + col, y + ri
-                            if 0 <= px < SIZE and 0 <= py < SIZE:
-                                pix[px, py] = (255, 255, 255)
-                cx += CHAR_ADVANCE
-
-        if has_track:
-            draw_str(track_upper, START_Y)
-        if has_artist:
-            draw_str(artist_upper, START_Y + LINE_SPACING)
-        return frame
-
-    frames: list[tuple[Image.Image, int]] = []
-
-    # Initial pause: show start of text
-    frames.append((make_frame(0), pause_ms))
-
-    # Scroll from just past start to end_offset
-    for offset in range(-scroll_speed, end_offset, -scroll_speed):
-        frames.append((make_frame(offset), frame_delay))
-
-    # Final frame at exact end position, shorter pause before looping
-    frames.append((make_frame(end_offset), pause_ms // 2))
+        apply_now_playing_overlay(frame, t, a)
+        frames.append((frame, page_delay))
 
     return frames
