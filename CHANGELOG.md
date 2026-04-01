@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.6.1](https://github.com/d0ugal/iDotMatrix-HomeAssistant/compare/v2.6.0...v2.6.1) (2026-04-01)
+
+
+### Bug Fixes
+
+* narrow path type to satisfy pyright in display_image ([94920d7](https://github.com/d0ugal/iDotMatrix-HomeAssistant/commit/94920d7bef723770ec5a7e9fcb1c5a7a6aa04177))
+* revert Pillow to 12.1.1 (HA pins 12.1.1 internally) ([1774798](https://github.com/d0ugal/iDotMatrix-HomeAssistant/commit/17747984abd751966eeacd2621bdcf7921e058fb))
+* use internal camera API instead of HTTP proxy (avoids 403) ([0771cf4](https://github.com/d0ugal/iDotMatrix-HomeAssistant/commit/0771cf42ddba3b5b6fa79add8f2b865bf1e5be91))
+
 ## [2.6.0](https://github.com/d0ugal/iDotMatrix-HomeAssistant/compare/v2.5.0...v2.6.0) (2026-04-01)
 
 
