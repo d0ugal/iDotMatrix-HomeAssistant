@@ -153,7 +153,9 @@ def _ring_colour(alt):
         return (r, g, b)
     return RING_ON
 
+
 # ── Cycle bar ─────────────────────────────────────────────────────────────────
+
 
 def _draw_cycle_bar(pix, age: float) -> None:
     """Draw a 1-pixel-tall lunar cycle timeline across the top row.
@@ -166,11 +168,11 @@ def _draw_cycle_bar(pix, age: float) -> None:
     full_x = SIZE // 2  # midpoint = full moon
     for x in range(SIZE):
         if x == cycle_x:
-            pix[x, 0] = (220, 220, 220)       # current position: white
+            pix[x, 0] = (220, 220, 220)  # current position: white
         elif x == full_x:
-            pix[x, 0] = (80, 76, 40)          # full-moon marker: dim gold
+            pix[x, 0] = (80, 76, 40)  # full-moon marker: dim gold
         else:
-            pix[x, 0] = (30, 30, 30)          # track
+            pix[x, 0] = (30, 30, 30)  # track
 
 
 # ── Public render function ─────────────────────────────────────────────────────

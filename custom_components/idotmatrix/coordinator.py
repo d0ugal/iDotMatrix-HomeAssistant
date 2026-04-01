@@ -336,7 +336,9 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
                 durations = [d for _, d in frames_data]
                 _LOGGER.info(
                     "display_now_playing: rendering '%s' by '%s' — %d frames",
-                    track, artist, len(frames),
+                    track,
+                    artist,
+                    len(frames),
                 )
                 palette = frames[0].quantize(colors=32)
                 frames_p = [f.quantize(palette=palette) for f in frames]
@@ -365,7 +367,9 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
         gif_size = os.path.getsize(gif_path)
         _LOGGER.info(
             "display_now_playing: uploading '%s' by '%s' — %.1f KB",
-            track, artist, gif_size / 1024,
+            track,
+            artist,
+            gif_size / 1024,
         )
 
         if not await self._upload_gif(gif_path):
