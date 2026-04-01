@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.5.0](https://github.com/d0ugal/iDotMatrix-HomeAssistant/compare/v2.4.0...v2.5.0) (2026-04-01)
+
+
+### Features
+
+* remove event label; lunar cycle bar supersedes it ([b217171](https://github.com/d0ugal/iDotMatrix-HomeAssistant/commit/b21717193445614f2bb65ef516fb497b141d561e))
+
 ## [2.4.0](https://github.com/d0ugal/iDotMatrix-HomeAssistant/compare/v2.3.2...v2.4.0) (2026-04-01)
 
 
