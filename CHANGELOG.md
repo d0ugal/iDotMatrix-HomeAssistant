@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.4.0](https://github.com/d0ugal/iDotMatrix-HomeAssistant/compare/v2.3.2...v2.4.0) (2026-04-01)
+
+
+### Features
+
+* replace scrolling text with paged display (max 32 chars, 3s per page) ([9beefe9](https://github.com/d0ugal/iDotMatrix-HomeAssistant/commit/9beefe9f0dc47cac2e9d63af89e2519d2bc0a8d8))
+
 ## [2.3.2](https://github.com/d0ugal/iDotMatrix-HomeAssistant/compare/v2.3.1...v2.3.2) (2026-04-01)
 
 
