@@ -9,12 +9,24 @@ adapter or ESPHome proxy) with no cloud dependencies.
 ## Features
 
 - **Moon phase display** — renders a real-time moon phase image using your HA home location
-- **Now playing** — shows album art with scrolling track/artist overlay from any HA media player
+- **Now playing** — shows album art with paged track/artist overlay from any HA media player
 - **Display any image** — send a PNG, JPG, or animated GIF; automatically centre-cropped and resized to 64×64
 - **Automation-friendly** — all display modes are triggered by service calls; schedule and combine them however you like
 - **Temporary displays** — `display_for` reverts back to the previous default after a set number of seconds
 - **Persistent default** — the last permanent display call is saved to disk and replayed on HA restart and device power-cycle
 - **Light entity** — turn the screen on/off and adjust brightness; turning on replays the current default
+
+---
+
+## Previews
+
+**Moon phase** — new moon through to waning crescent, rendered from London at 6× zoom. The top pixel row is a lunar cycle progress bar; the ring indicator shows the moon's current position in the sky.
+
+![Moon phases across the full cycle](docs/moon_phases.png)
+
+**Now playing** — album art centre-cropped to 64×64 with pixel-font track and artist overlay.
+
+![Now playing — The Captain / Believer / Title and Registration](docs/now_playing.png)
 
 ---
 
