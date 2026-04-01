@@ -406,25 +406,15 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
         Supply either `path` (local file) or `entity_id` (camera entity).
         Camera snapshots are always fetched fresh and not cached.
         """
-        import aiohttp
-        from homeassistant.helpers.aiohttp_client import async_get_clientsession
-
         cache_dir = self._gif_cache_dir()
 
         if entity_id is not None:
-            # --- camera entity path: fetch snapshot, no caching ---
-            url = f"http://localhost:8123/api/camera_proxy/{entity_id}"
+            # --- camera entity path: fetch snapshot via internal HA API, no caching ---
+            from homeassistant.components.camera import async_get_image
+
             try:
-                session = async_get_clientsession(self.hass)
-                async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
-                    if resp.status != 200:
-                        _LOGGER.error(
-                            "display_image: camera snapshot failed for %s (HTTP %s)",
-                            entity_id,
-                            resp.status,
-                        )
-                        return
-                    raw = await resp.read()
+                img_obj = await async_get_image(self.hass, entity_id, timeout=10)
+                raw = img_obj.content
             except Exception as exc:
                 _LOGGER.error("display_image: camera snapshot error for %s: %s", entity_id, exc)
                 return
