@@ -18,7 +18,7 @@
     "issue_tracker": "https://github.com/d0ugal/iDotMatrix-HomeAssistant/issues",
     "requirements": [
         "bleak==2.1.1",
-        "Pillow==12.1.1",
+        "Pillow==12.2.0",
         "bleak-retry-connector==4.6.0",
         "ephem==4.2.1",
         "emoji==2.15.0"
