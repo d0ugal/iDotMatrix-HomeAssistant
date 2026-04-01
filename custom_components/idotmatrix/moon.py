@@ -269,11 +269,11 @@ def render_image(lat: str, lon: str, elev: int) -> Image.Image:
         pix[closest[0], closest[1]] = (120, 70, 30)
     else:
         fraction = data["rise_fraction"] or 0.0
-        bar_height = max(1, round(fraction * SIZE))
+        bar_height = round(fraction * SIZE)
         y_start = SIZE - bar_height
         for y in range(y_start, SIZE):
-            pix[0, y] = ring_col
-            pix[SIZE - 1, y] = ring_col
+            pix[0, y] = RING_ON
+            pix[SIZE - 1, y] = RING_ON
 
     label = _event_label(data["age"])
     if label is not None:
