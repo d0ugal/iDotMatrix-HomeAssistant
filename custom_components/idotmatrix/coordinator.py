@@ -459,6 +459,9 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
 
         else:
             # --- local file path: cache by mtime ---
+            if path is None:
+                _LOGGER.error("display_image: neither path nor entity_id provided")
+                return
             if not os.path.exists(path):
                 _LOGGER.error("display_image: file not found: %s", path)
                 return
