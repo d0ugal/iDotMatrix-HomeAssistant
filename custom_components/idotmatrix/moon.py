@@ -199,10 +199,10 @@ def _event_label(age: float) -> tuple[str, tuple[int, int, int]] | None:
     days_to_new = (LUNAR_CYCLE - days_since_new) % LUNAR_CYCLE
     if days_to_full < days_to_new:
         days = days_to_full
-        prefix, color = "F", (255, 200, 50)   # gold
+        prefix, color = "F", (110, 90, 40)    # dim gold
     else:
         days = days_to_new
-        prefix, color = "N", (100, 180, 255)  # blue
+        prefix, color = "N", (50, 80, 110)   # dim blue
     if days > EVENT_LABEL_DAYS:
         return None
     return f"{prefix}{round(days)}", color
