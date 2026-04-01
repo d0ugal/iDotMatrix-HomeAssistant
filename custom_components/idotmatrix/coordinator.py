@@ -358,6 +358,12 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
         else:
             _LOGGER.info("display_now_playing: cache hit (%s)", cache_key[:8])
 
+        gif_size = os.path.getsize(gif_path)
+        _LOGGER.info(
+            "display_now_playing: uploading '%s' by '%s' — %.1f KB",
+            track, artist, gif_size / 1024,
+        )
+
         if not await self._upload_gif(gif_path):
             return
 
