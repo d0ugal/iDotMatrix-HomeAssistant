@@ -61,6 +61,31 @@ display_image:
           mode: box
           unit_of_measurement: seconds
 
+display_stream:
+  name: Display stream
+  description: >
+    Repeatedly snapshot a camera entity and push frames to the display for the
+    given duration.  Frame rate depends on BLE throughput — expect 1–3 FPS.
+    Reverts to the default display when the duration elapses or another display
+    action is triggered.
+  fields:
+    entity_id:
+      name: Camera entity
+      description: The camera entity to stream from.
+      required: true
+      selector:
+        entity:
+          domain: camera
+    stream_for:
+      name: Stream for
+      description: How many seconds to stream before reverting to the default display.
+      required: true
+      selector:
+        number:
+          min: 1
+          mode: box
+          unit_of_measurement: seconds
+
 display_emoji:
   name: Display emoji
   description: >

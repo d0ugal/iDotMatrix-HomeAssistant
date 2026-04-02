@@ -41,6 +41,12 @@ _SCHEMA_DISPLAY_EMOJI = vol.Schema(
         vol.Optional("display_for"): vol.Coerce(float),
     }
 )
+_SCHEMA_DISPLAY_STREAM = vol.Schema(
+    {
+        vol.Required("entity_id"): cv.entity_id,
+        vol.Required("stream_for"): vol.All(vol.Coerce(float), vol.Range(min=1)),
+    }
+)
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
@@ -96,6 +102,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         for coord in _coordinators():
             await coord.do_display_emoji(call.data["emoji"], display_for=display_for)
 
+    async def _display_stream(call) -> None:
+        for coord in _coordinators():
+            await coord.do_display_stream(
+                entity_id=call.data["entity_id"],
+                stream_for=call.data["stream_for"],
+            )
+
     if not hass.services.has_service(DOMAIN, "display_moon"):
         hass.services.async_register(DOMAIN, "display_moon", _display_moon, _SCHEMA_DISPLAY_MOON)
         hass.services.async_register(
@@ -103,6 +116,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
         hass.services.async_register(DOMAIN, "display_image", _display_image, _SCHEMA_DISPLAY_IMAGE)
         hass.services.async_register(DOMAIN, "display_emoji", _display_emoji, _SCHEMA_DISPLAY_EMOJI)
+        hass.services.async_register(
+            DOMAIN, "display_stream", _display_stream, _SCHEMA_DISPLAY_STREAM
+        )
 
     return True
 
@@ -112,6 +128,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     coordinator = hass.data.get(DOMAIN, {}).get(entry.entry_id)
     if coordinator:
+        coordinator.cancel_stream()
         coordinator.cancel_revert()
 
     if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
@@ -119,7 +136,13 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Remove services only when the last entry is gone
     if not any(isinstance(c, IDotMatrixCoordinator) for c in hass.data.get(DOMAIN, {}).values()):
-        for svc in ("display_moon", "display_now_playing", "display_image", "display_emoji"):
+        for svc in (
+            "display_moon",
+            "display_now_playing",
+            "display_image",
+            "display_emoji",
+            "display_stream",
+        ):
             hass.services.async_remove(DOMAIN, svc)
 
     return unload_ok

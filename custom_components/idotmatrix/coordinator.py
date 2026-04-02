@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import io
 import logging
 import os
 import tempfile
+import time
 from datetime import timedelta
 
 from homeassistant.config_entries import ConfigEntry
@@ -22,6 +24,7 @@ from .const import (
     DISPLAY_MODE_IMAGE,
     DISPLAY_MODE_MOON,
     DISPLAY_MODE_NOW_PLAYING,
+    DISPLAY_MODE_STREAM,
     DOMAIN,
     STORAGE_VERSION,
 )
@@ -113,6 +116,9 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
         # Cancel handle for display_for revert timer
         self._revert_unsub = None
 
+        # Running stream task (if any)
+        self._stream_task: asyncio.Task | None = None
+
     # ------------------------------------------------------------------
     # DataUpdateCoordinator
 
@@ -151,6 +157,11 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
 
     # ------------------------------------------------------------------
     # display_for timer
+
+    def cancel_stream(self) -> None:
+        if self._stream_task and not self._stream_task.done():
+            self._stream_task.cancel()
+        self._stream_task = None
 
     def cancel_revert(self) -> None:
         if self._revert_unsub:
@@ -228,6 +239,7 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
         set_default: bool = True,
     ) -> None:
         """Render moon phase and upload as GIF."""
+        self.cancel_stream()
         from .moon import render_image
 
         lat = str(self.hass.config.latitude)
@@ -282,6 +294,7 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
         set_default: bool = True,
     ) -> None:
         """Fetch album art from a media player and upload as now-playing GIF."""
+        self.cancel_stream()
         import aiohttp
         from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
@@ -406,6 +419,7 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
         Supply either `path` (local file) or `entity_id` (camera entity).
         Camera snapshots are always fetched fresh and not cached.
         """
+        self.cancel_stream()
         cache_dir = self._gif_cache_dir()
 
         if entity_id is not None:
@@ -523,6 +537,7 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
         set_default: bool = True,
     ) -> None:
         """Fetch a Twemoji PNG, resize to 64×64, and upload."""
+        self.cancel_stream()
         import aiohttp
         import emoji as emoji_lib
         from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -603,6 +618,80 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
 
         self._mark_updated(DISPLAY_MODE_EMOJI, attrs)
         _LOGGER.info("display_emoji: uploaded %r", char)
+
+    async def do_display_stream(
+        self,
+        entity_id: str,
+        stream_for: float,
+    ) -> None:
+        """Repeatedly snapshot a camera entity and push frames over BLE.
+
+        Runs until `stream_for` seconds have elapsed or another display
+        action cancels the stream.  Always reverts to the default display
+        when done.
+        """
+        self.cancel_stream()
+        self.cancel_revert()
+        self._mark_updated(DISPLAY_MODE_STREAM, {"entity_id": entity_id, "stream_for": stream_for})
+        self._stream_task = self.hass.async_create_task(
+            self._run_stream(entity_id, stream_for)
+        )
+
+    async def _run_stream(self, entity_id: str, stream_for: float) -> None:
+        """Inner loop for do_display_stream — runs as a background task."""
+        from homeassistant.components.camera import async_get_image
+
+        deadline = time.monotonic() + stream_for
+        frames_sent = 0
+        completed = False
+
+        try:
+            while time.monotonic() < deadline:
+                try:
+                    img_obj = await async_get_image(self.hass, entity_id, timeout=10)
+                    raw = img_obj.content
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    _LOGGER.warning("display_stream: snapshot error for %s: %s", entity_id, exc)
+                    await asyncio.sleep(1)
+                    continue
+
+                def _process(data: bytes = raw) -> bytes:
+                    img = PilImage.open(io.BytesIO(data)).convert("RGB")
+                    frame = _crop_and_resize(img, SCREEN_SIZE)
+                    palette = frame.quantize(colors=256)
+                    buf = io.BytesIO()
+                    palette.save(buf, format="GIF", loop=0, disposal=2)
+                    return buf.getvalue()
+
+                gif_data = await self.hass.async_add_executor_job(_process)
+
+                with tempfile.NamedTemporaryFile(suffix=".gif", delete=False) as tmp:
+                    tmp.write(gif_data)
+                    tmp_path = tmp.name
+
+                try:
+                    await self._upload_gif(tmp_path)
+                finally:
+                    if os.path.exists(tmp_path):
+                        os.remove(tmp_path)
+
+                frames_sent += 1
+
+            completed = True
+        except asyncio.CancelledError:
+            pass
+        finally:
+            self._stream_task = None
+            _LOGGER.info(
+                "display_stream: %s — %d frames sent",
+                "completed" if completed else "cancelled",
+                frames_sent,
+            )
+
+        if completed:
+            await self._replay_default()
 
     # ------------------------------------------------------------------
     # Screen power and brightness
