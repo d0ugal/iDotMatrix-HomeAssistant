@@ -77,6 +77,83 @@ All three services accept an optional `display_for` (seconds). When set, the cal
 **temporary** — it displays for that duration then automatically reverts to whichever
 display was set before. Without `display_for`, the call updates the persisted default.
 
+### `idotmatrix.display_stream`
+
+Repeatedly snapshots a camera entity and pushes frames to the display for the given
+duration. Always temporary — reverts to the default display when done. Any other display
+action cancels an in-progress stream. Expected frame rate is 1–3 FPS over BLE.
+
+```yaml
+action: idotmatrix.display_stream
+data:
+  entity_id: camera.front_door
+  stream_for: 30
+```
+
+---
+
+## Display model
+
+The integration uses a two-layer display model:
+
+**Default display** — the idle state of the screen. Set by any service call made
+*without* `display_for` (e.g. `display_moon`, `display_now_playing`). Persisted to disk
+and replayed on HA restart or device power-cycle. Think of this as "what the display
+shows when nothing is happening."
+
+**Temporary display** — any service call made *with* `display_for` or `stream_for`.
+Shows for the given duration then automatically reverts to the default. Does not change
+the persisted default.
+
+The recommended pattern for event-driven displays is to drive them entirely from HA
+automations using a priority sensor, leaving the integration to handle revert-to-default
+automatically:
+
+```yaml
+# 1. Set your idle display (do this once, e.g. on startup)
+action: idotmatrix.display_moon
+
+# 2. Use a priority template sensor in HA to decide what event is active
+template:
+  - sensor:
+      name: iDotMatrix Active Display
+      state: >-
+        {% if is_state('input_boolean.idotmatrix_doorbell', 'on') %}
+          doorbell
+        {% elif is_state('input_boolean.idotmatrix_person', 'on') %}
+          person
+        {% else %}
+          none
+        {% endif %}
+
+# 3. One automation watches the sensor and streams the right camera
+automation:
+  - alias: iDotMatrix Display Priority
+    trigger:
+      - platform: state
+        entity_id: sensor.idotmatrix_active_display
+    condition:
+      - condition: template
+        value_template: "{{ trigger.to_state.state != 'none' }}"
+    action:
+      - choose:
+          - conditions: "{{ trigger.to_state.state == 'doorbell' }}"
+            sequence:
+              - action: idotmatrix.display_stream
+                data:
+                  entity_id: camera.front_door
+                  stream_for: 30
+          - conditions: "{{ trigger.to_state.state == 'person' }}"
+            sequence:
+              - action: idotmatrix.display_stream
+                data:
+                  entity_id: camera.front_door
+                  stream_for: 15
+```
+
+Higher-priority events automatically cancel lower-priority streams because each
+`display_stream` call cancels any in-progress stream before starting a new one.
+
 ---
 
 ## Entities
@@ -116,42 +193,42 @@ automation:
   - alias: iDotMatrix Now Playing
     trigger:
       - platform: state
-        entity_id: media_player.extension_speaker
+        entity_id: media_player.living_room
         to: "playing"
       - platform: state
-        entity_id: media_player.extension_speaker
+        entity_id: media_player.living_room
         attribute: media_title
     condition:
       - condition: state
-        entity_id: media_player.extension_speaker
+        entity_id: media_player.living_room
         state: "playing"
     action:
       - action: idotmatrix.display_now_playing
         data:
-          entity_id: media_player.extension_speaker
+          entity_id: media_player.living_room
 
   - alias: iDotMatrix Music Stopped
     trigger:
       - platform: state
-        entity_id: media_player.extension_speaker
+        entity_id: media_player.living_room
         not_to: "playing"
     action:
       - action: idotmatrix.display_moon
 ```
 
-**Doorbell — show animation then return to whatever was showing**
+**Doorbell — stream camera then return to whatever was showing**
 ```yaml
 automation:
   - alias: iDotMatrix Doorbell
     trigger:
       - platform: state
-        entity_id: binary_sensor.front_door_doorbell
+        entity_id: binary_sensor.front_door_visitor
         to: "on"
     action:
-      - action: idotmatrix.display_image
+      - action: idotmatrix.display_stream
         data:
-          path: /config/www/doorbell.gif
-          display_for: 15
+          entity_id: camera.front_door
+          stream_for: 30
 ```
 
 **Screen on/off**
@@ -168,9 +245,8 @@ automation:
 
   - alias: iDotMatrix Screen On
     trigger:
-      - platform: state
-        entity_id: input_boolean.is_somebody_up
-        to: "on"
+      - platform: time
+        at: "07:00:00"
     action:
       - action: light.turn_on
         target:
