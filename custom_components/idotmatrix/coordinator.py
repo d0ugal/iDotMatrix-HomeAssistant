@@ -633,9 +633,7 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
         self.cancel_stream()
         self.cancel_revert()
         self._mark_updated(DISPLAY_MODE_STREAM, {"entity_id": entity_id, "stream_for": stream_for})
-        self._stream_task = self.hass.async_create_task(
-            self._run_stream(entity_id, stream_for)
-        )
+        self._stream_task = self.hass.async_create_task(self._run_stream(entity_id, stream_for))
 
     async def _run_stream(self, entity_id: str, stream_for: float) -> None:
         """Inner loop for do_display_stream — runs as a background task."""
