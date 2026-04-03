@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.7.0](https://github.com/d0ugal/iDotMatrix-HomeAssistant/compare/v2.6.1...v2.7.0) (2026-04-03)
+
+
+### Features
+
+* add display_stream service for live camera polling ([beaaa08](https://github.com/d0ugal/iDotMatrix-HomeAssistant/commit/beaaa08804bbedab19e902d5bacd53d5618e8de4))
+
+
+### Documentation
+
+* document display model, priority pattern, and display_stream service ([d41b500](https://github.com/d0ugal/iDotMatrix-HomeAssistant/commit/d41b500bbbd11ee37742ea7ac963e6645b3c24c0))
+
 ## [2.6.1](https://github.com/d0ugal/iDotMatrix-HomeAssistant/compare/v2.6.0...v2.6.1) (2026-04-01)
 
 
