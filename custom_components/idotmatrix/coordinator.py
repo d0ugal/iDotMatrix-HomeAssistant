@@ -535,6 +535,8 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
         emoji_input: str,
         display_for: float | None = None,
         set_default: bool = True,
+        line1: str | None = None,
+        line2: str | None = None,
     ) -> None:
         """Fetch a Twemoji PNG, resize to 64×64, and upload."""
         self.cancel_stream()
@@ -601,7 +603,30 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
         else:
             _LOGGER.info("display_emoji: cache hit %r (%s)", char, codepoints)
 
-        if not await self._upload_gif(gif_path):
+        if line1 or line2:
+            def _apply_overlay() -> bytes:
+                from .overlay import apply_now_playing_overlay
+
+                with PilImage.open(gif_path) as src:
+                    frame = src.convert("RGB")
+                apply_now_playing_overlay(frame, line1 or "", line2 or "")
+                buf = io.BytesIO()
+                frame.quantize(colors=256).save(buf, format="GIF", loop=0, disposal=2)
+                return buf.getvalue()
+
+            overlay_data = await self.hass.async_add_executor_job(_apply_overlay)
+            with tempfile.NamedTemporaryFile(suffix=".gif", delete=False) as tmp:
+                tmp.write(overlay_data)
+                upload_path = tmp.name
+            try:
+                ok = await self._upload_gif(upload_path)
+            finally:
+                if os.path.exists(upload_path):
+                    os.remove(upload_path)
+        else:
+            ok = await self._upload_gif(gif_path)
+
+        if not ok:
             return
 
         attrs = {"char": char, "codepoints": codepoints}

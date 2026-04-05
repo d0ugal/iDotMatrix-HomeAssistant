@@ -39,6 +39,8 @@ _SCHEMA_DISPLAY_EMOJI = vol.Schema(
     {
         vol.Required("emoji"): cv.string,
         vol.Optional("display_for"): vol.Coerce(float),
+        vol.Optional("line1"): cv.string,
+        vol.Optional("line2"): cv.string,
     }
 )
 _SCHEMA_DISPLAY_STREAM = vol.Schema(
@@ -100,7 +102,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     async def _display_emoji(call) -> None:
         display_for = call.data.get("display_for")
         for coord in _coordinators():
-            await coord.do_display_emoji(call.data["emoji"], display_for=display_for)
+            await coord.do_display_emoji(
+                call.data["emoji"],
+                display_for=display_for,
+                line1=call.data.get("line1"),
+                line2=call.data.get("line2"),
+            )
 
     async def _display_stream(call) -> None:
         for coord in _coordinators():
