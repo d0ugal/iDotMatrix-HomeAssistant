@@ -1,5 +1,24 @@
 # Changelog
 
+## [2.8.0](https://github.com/d0ugal/iDotMatrix-HomeAssistant/compare/v2.7.0...v2.8.0) (2026-04-05)
+
+
+### Features
+
+* add line1/line2 text overlay support to display_emoji service ([5fd0fd9](https://github.com/d0ugal/iDotMatrix-HomeAssistant/commit/5fd0fd93c48a5c8ffcb01f78271e6ff442381769))
+
+
+### Bug Fixes
+
+* add 1s inter-frame delay in display_stream to prevent device restart ([6a5dc0c](https://github.com/d0ugal/iDotMatrix-HomeAssistant/commit/6a5dc0c173f2860d51d910160ff1216fc21242c8))
+* ruff format coordinator.py ([574bd8e](https://github.com/d0ugal/iDotMatrix-HomeAssistant/commit/574bd8e1d6fc07285982929b771de07c2186bf87))
+* validate line1/line2 max length against MAX_CHARS (15) ([2d08e99](https://github.com/d0ugal/iDotMatrix-HomeAssistant/commit/2d08e99740c2f7afa7e0ba4b1e5b6bf7b9d7468f))
+
+
+### Documentation
+
+* document display_emoji service and line1/line2 text overlay ([0b2941b](https://github.com/d0ugal/iDotMatrix-HomeAssistant/commit/0b2941b28c77f7b525086cc9080edbf9da532270))
+
 ## [2.7.0](https://github.com/d0ugal/iDotMatrix-HomeAssistant/compare/v2.6.1...v2.7.0) (2026-04-03)
 
 
