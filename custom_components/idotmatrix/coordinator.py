@@ -604,6 +604,7 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
             _LOGGER.info("display_emoji: cache hit %r (%s)", char, codepoints)
 
         if line1 or line2:
+
             def _apply_overlay() -> bytes:
                 from .overlay import apply_now_playing_overlay
 
