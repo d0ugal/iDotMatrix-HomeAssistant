@@ -77,6 +77,25 @@ All three services accept an optional `display_for` (seconds). When set, the cal
 **temporary** — it displays for that duration then automatically reverts to whichever
 display was set before. Without `display_for`, the call updates the persisted default.
 
+### `idotmatrix.display_emoji`
+
+Fetches a [Twemoji](https://github.com/twitter/twemoji) PNG for the given emoji, resizes
+it to 64×64, and uploads it. Accepts a raw emoji character (`⚡`), a bare name (`zap`),
+or a colon-wrapped name (`:zap:`).
+
+Optional `line1` and `line2` parameters overlay up to 15 characters of pixel-font text
+in the top-left corner of the display (3×5 px glyphs, 4 px advance). The text is drawn
+in white over a darkened background region so it remains legible over any emoji.
+
+```yaml
+action: idotmatrix.display_emoji
+data:
+  emoji: zap
+  display_for: 15   # optional
+  line1: "NE"       # optional — max 15 chars
+  line2: "12KM"     # optional — max 15 chars
+```
+
 ### `idotmatrix.display_stream`
 
 Repeatedly snapshots a camera entity and pushes frames to the display for the given
@@ -229,6 +248,30 @@ automation:
         data:
           entity_id: camera.front_door
           stream_for: 30
+```
+
+**Lightning strike — show emoji with direction and distance**
+```yaml
+automation:
+  - alias: iDotMatrix Lightning
+    trigger:
+      - platform: state
+        entity_id: sensor.home_lightning_counter
+    condition:
+      - condition: template
+        value_template: >
+          {{ trigger.to_state.state | int(0) > trigger.from_state.state | int(0) }}
+    action:
+      - action: idotmatrix.display_emoji
+        data:
+          emoji: zap
+          display_for: 15
+          line1: >-
+            {% set az = states('sensor.home_lightning_azimuth') | float(0) %}
+            {% set dirs = ['N','NE','E','SE','S','SW','W','NW'] %}
+            {{ dirs[((az + 22.5) % 360 / 45) | int] }}
+          line2: >-
+            {{ states('sensor.home_lightning_distance') | float(0) | round(0) | int }}KM
 ```
 
 **Screen on/off**
