@@ -676,6 +676,7 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
                         os.remove(tmp_path)
 
                 frames_sent += 1
+                await asyncio.sleep(1)
 
             completed = True
         except asyncio.CancelledError:
