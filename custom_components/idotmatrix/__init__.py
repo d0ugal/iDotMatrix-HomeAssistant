@@ -11,6 +11,7 @@ from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 
 from .const import CONF_MAC, DOMAIN
+from .overlay import MAX_CHARS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -39,8 +40,8 @@ _SCHEMA_DISPLAY_EMOJI = vol.Schema(
     {
         vol.Required("emoji"): cv.string,
         vol.Optional("display_for"): vol.Coerce(float),
-        vol.Optional("line1"): cv.string,
-        vol.Optional("line2"): cv.string,
+        vol.Optional("line1"): vol.All(cv.string, vol.Length(max=MAX_CHARS)),
+        vol.Optional("line2"): vol.All(cv.string, vol.Length(max=MAX_CHARS)),
     }
 )
 _SCHEMA_DISPLAY_STREAM = vol.Schema(
