@@ -247,29 +247,18 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
         elev = int(self.hass.config.elevation or 0)
 
         cache_dir = self._gif_cache_dir()
-        hour = dt_util.now().strftime("%Y-%m-%d-%H")
-        cache_key = hashlib.md5(f"{lat}:{lon}:{elev}:{hour}".encode()).hexdigest()
-        gif_path = os.path.join(cache_dir, f"moon_{cache_key}.gif")
+        gif_path = os.path.join(cache_dir, "moon_latest.gif")
 
-        if not os.path.exists(gif_path):
-            import glob
+        def _render_gif() -> None:
+            img = render_image(lat, lon, elev)
+            gif_img = img.quantize(colors=256)
+            buf = io.BytesIO()
+            gif_img.save(buf, format="GIF", loop=0, disposal=2)
+            os.makedirs(cache_dir, exist_ok=True)
+            with open(gif_path, "wb") as f:
+                f.write(buf.getvalue())
 
-            def _render_gif() -> None:
-                img = render_image(lat, lon, elev)
-                gif_img = img.quantize(colors=256)
-                buf = io.BytesIO()
-                gif_img.save(buf, format="GIF", loop=0, disposal=2)
-                os.makedirs(cache_dir, exist_ok=True)
-                for old in glob.glob(os.path.join(cache_dir, "moon_*.gif")):
-                    if old != gif_path:
-                        os.remove(old)
-                with open(gif_path, "wb") as f:
-                    f.write(buf.getvalue())
-
-            await self.hass.async_add_executor_job(_render_gif)
-            _LOGGER.info("display_moon: rendered and cached (%s)", cache_key[:8])
-        else:
-            _LOGGER.info("display_moon: cache hit (%s)", cache_key[:8])
+        await self.hass.async_add_executor_job(_render_gif)
 
         ok = await self._upload_gif(gif_path)
 
