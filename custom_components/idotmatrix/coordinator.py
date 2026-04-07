@@ -247,8 +247,9 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
         elev = int(self.hass.config.elevation or 0)
 
         cache_dir = self._gif_cache_dir()
-        today = dt_util.now().strftime("%Y-%m-%d")
-        gif_path = os.path.join(cache_dir, f"moon_{today}.gif")
+        hour = dt_util.now().strftime("%Y-%m-%d-%H")
+        cache_key = hashlib.md5(f"{lat}:{lon}:{elev}:{hour}".encode()).hexdigest()
+        gif_path = os.path.join(cache_dir, f"moon_{cache_key}.gif")
 
         if not os.path.exists(gif_path):
             import glob
@@ -266,9 +267,9 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
                     f.write(buf.getvalue())
 
             await self.hass.async_add_executor_job(_render_gif)
-            _LOGGER.info("display_moon: rendered and cached for %s", today)
+            _LOGGER.info("display_moon: rendered and cached (%s)", cache_key[:8])
         else:
-            _LOGGER.info("display_moon: cache hit for %s", today)
+            _LOGGER.info("display_moon: cache hit (%s)", cache_key[:8])
 
         ok = await self._upload_gif(gif_path)
 
