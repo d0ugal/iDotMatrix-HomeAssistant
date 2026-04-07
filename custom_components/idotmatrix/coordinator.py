@@ -246,24 +246,31 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
         lon = str(self.hass.config.longitude)
         elev = int(self.hass.config.elevation or 0)
 
-        def _render_gif() -> bytes:
-            img = render_image(lat, lon, elev)
-            gif_img = img.quantize(colors=256)
-            buf = io.BytesIO()
-            gif_img.save(buf, format="GIF", loop=0, disposal=2)
-            return buf.getvalue()
+        cache_dir = self._gif_cache_dir()
+        today = dt_util.now().strftime("%Y-%m-%d")
+        gif_path = os.path.join(cache_dir, f"moon_{today}.gif")
 
-        gif_data = await self.hass.async_add_executor_job(_render_gif)
+        if not os.path.exists(gif_path):
+            import glob
 
-        with tempfile.NamedTemporaryFile(suffix=".gif", delete=False) as tmp:
-            tmp.write(gif_data)
-            tmp_path = tmp.name
+            def _render_gif() -> None:
+                img = render_image(lat, lon, elev)
+                gif_img = img.quantize(colors=256)
+                buf = io.BytesIO()
+                gif_img.save(buf, format="GIF", loop=0, disposal=2)
+                os.makedirs(cache_dir, exist_ok=True)
+                for old in glob.glob(os.path.join(cache_dir, "moon_*.gif")):
+                    if old != gif_path:
+                        os.remove(old)
+                with open(gif_path, "wb") as f:
+                    f.write(buf.getvalue())
 
-        try:
-            ok = await self._upload_gif(tmp_path)
-        finally:
-            if os.path.exists(tmp_path):
-                os.remove(tmp_path)
+            await self.hass.async_add_executor_job(_render_gif)
+            _LOGGER.info("display_moon: rendered and cached for %s", today)
+        else:
+            _LOGGER.info("display_moon: cache hit for %s", today)
+
+        ok = await self._upload_gif(gif_path)
 
         if not ok:
             return
@@ -691,15 +698,13 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
 
                 gif_data = await self.hass.async_add_executor_job(_process)
 
-                with tempfile.NamedTemporaryFile(suffix=".gif", delete=False) as tmp:
-                    tmp.write(gif_data)
-                    tmp_path = tmp.name
+                cache_dir = self._gif_cache_dir()
+                stream_path = os.path.join(cache_dir, "stream_latest.gif")
+                os.makedirs(cache_dir, exist_ok=True)
+                with open(stream_path, "wb") as f:
+                    f.write(gif_data)
 
-                try:
-                    await self._upload_gif(tmp_path)
-                finally:
-                    if os.path.exists(tmp_path):
-                        os.remove(tmp_path)
+                await self._upload_gif(stream_path)
 
                 frames_sent += 1
                 await asyncio.sleep(1)
