@@ -1,5 +1,24 @@
 # Changelog
 
+## [2.9.0](https://github.com/d0ugal/iDotMatrix-HomeAssistant/compare/v2.8.0...v2.9.0) (2026-04-07)
+
+
+### Features
+
+* cache moon and stream GIFs to cache dir ([edfa4d4](https://github.com/d0ugal/iDotMatrix-HomeAssistant/commit/edfa4d4c689ebd40292865a5f56da35d50e817da))
+* display_image supports image.* entities ([aa2b7a9](https://github.com/d0ugal/iDotMatrix-HomeAssistant/commit/aa2b7a973a6d2fa50b01a46325fa5e0fe0ea6e69))
+* use tottie for shared image rendering ([32b37ae](https://github.com/d0ugal/iDotMatrix-HomeAssistant/commit/32b37aed7d64205fdc56afb23e9462cdba89426b))
+
+
+### Bug Fixes
+
+* always re-render moon, write to moon_latest.gif instead of caching ([e77de29](https://github.com/d0ugal/iDotMatrix-HomeAssistant/commit/e77de2933f08c188bd5072137e3d6e6e7099fc8e))
+* apply ruff format with correct line-length ([185f889](https://github.com/d0ugal/iDotMatrix-HomeAssistant/commit/185f8898b5d7bf19a327498567ee7fe0f4960e44))
+* cache moon GIF by hourly hash of lat/lon/elev instead of date ([81ad760](https://github.com/d0ugal/iDotMatrix-HomeAssistant/commit/81ad760023248bb7d1773d04bdc4d4df9bd57a21))
+* import MAX_CHARS from tottie, fix ruff formatting ([77bf7fc](https://github.com/d0ugal/iDotMatrix-HomeAssistant/commit/77bf7fc708ba082b6952c668cf0bd207dc27eda8))
+* move tottie import into third-party block ([4beefa3](https://github.com/d0ugal/iDotMatrix-HomeAssistant/commit/4beefa3b62af448a6e249888b1c90fabd755e453))
+* resolve ruff formatting in coordinator ([f6e1d21](https://github.com/d0ugal/iDotMatrix-HomeAssistant/commit/f6e1d218da3a173f80ebe5bc3502576a38be5268))
+
 ## [2.8.0](https://github.com/d0ugal/iDotMatrix-HomeAssistant/compare/v2.7.0...v2.8.0) (2026-04-05)
 
 
