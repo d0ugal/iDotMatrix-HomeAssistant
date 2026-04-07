@@ -45,12 +45,14 @@ display_image:
       selector:
         text:
     entity_id:
-      name: Camera entity
-      description: A camera entity to snapshot and display. Mutually exclusive with path.
+      name: Camera or image entity
+      description: A camera or image entity to snapshot and display. Mutually exclusive with path.
       required: false
       selector:
         entity:
-          domain: camera
+          domain:
+            - camera
+            - image
     display_for:
       name: Display for
       description: Revert to the previous default after this many seconds.

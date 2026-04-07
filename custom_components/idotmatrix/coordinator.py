@@ -420,15 +420,40 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
         cache_dir = self._gif_cache_dir()
 
         if entity_id is not None:
-            # --- camera entity path: fetch snapshot via internal HA API, no caching ---
-            from homeassistant.components.camera import async_get_image
+            # --- entity path: camera or image entity, no caching ---
+            domain = entity_id.split(".")[0]
+            if domain == "image":
+                import aiohttp
+                from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-            try:
-                img_obj = await async_get_image(self.hass, entity_id, timeout=10)
-                raw = img_obj.content
-            except Exception as exc:
-                _LOGGER.error("display_image: camera snapshot error for %s: %s", entity_id, exc)
-                return
+                state = self.hass.states.get(entity_id)
+                if not state:
+                    _LOGGER.error("display_image: entity %s not found", entity_id)
+                    return
+                picture = state.attributes.get("entity_picture", "")
+                if not picture:
+                    _LOGGER.error("display_image: image entity %s has no entity_picture", entity_id)
+                    return
+                url = picture if picture.startswith("http") else f"http://localhost:8123{picture}"
+                session = async_get_clientsession(self.hass)
+                try:
+                    async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                        if resp.status != 200:
+                            _LOGGER.error("display_image: image entity fetch failed: %s", resp.status)
+                            return
+                        raw = await resp.read()
+                except Exception as exc:
+                    _LOGGER.error("display_image: image entity fetch error for %s: %s", entity_id, exc)
+                    return
+            else:
+                from homeassistant.components.camera import async_get_image
+
+                try:
+                    img_obj = await async_get_image(self.hass, entity_id, timeout=10)
+                    raw = img_obj.content
+                except Exception as exc:
+                    _LOGGER.error("display_image: camera snapshot error for %s: %s", entity_id, exc)
+                    return
 
             def _process_camera() -> bytes:
                 img = PilImage.open(io.BytesIO(raw)).convert("RGB")
