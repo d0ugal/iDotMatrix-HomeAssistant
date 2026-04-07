@@ -240,7 +240,7 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
     ) -> None:
         """Render moon phase and upload as GIF."""
         self.cancel_stream()
-        from .moon import render_image
+        from tottie.moon import render_image
 
         lat = str(self.hass.config.latitude)
         lon = str(self.hass.config.longitude)
@@ -295,7 +295,7 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
         import aiohttp
         from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-        from .overlay import render_now_playing_frames
+        from tottie.overlay import render_now_playing_frames
 
         state = self.hass.states.get(entity_id)
         if not state:
@@ -603,7 +603,7 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
         if line1 or line2:
 
             def _apply_overlay() -> bytes:
-                from .overlay import apply_now_playing_overlay
+                from tottie.overlay import apply_now_playing_overlay
 
                 with PilImage.open(gif_path) as src:
                     frame = src.convert("RGB")
