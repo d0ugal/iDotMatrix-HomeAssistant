@@ -22,7 +22,7 @@
         "bleak-retry-connector==4.6.0",
         "ephem==4.2.1",
         "emoji==2.15.0",
-        "tottie==0.1.1"
+        "tottie==0.2.0"
     ],
     "version": "2.9.0"
 }
