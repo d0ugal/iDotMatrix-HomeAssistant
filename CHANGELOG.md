@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.9.1](https://github.com/d0ugal/iDotMatrix-HomeAssistant/compare/v2.9.0...v2.9.1) (2026-04-18)
+
+
+### Bug Fixes
+
+* bump Pillow requirement to 12.2.0 ([2f77027](https://github.com/d0ugal/iDotMatrix-HomeAssistant/commit/2f7702755e42d04488d8264004b16c360e399d23))
+* remove Pillow version pin ([9bcf226](https://github.com/d0ugal/iDotMatrix-HomeAssistant/commit/9bcf2262aab81e7388585f91ea1414478e88d514))
+
 ## [2.9.0](https://github.com/d0ugal/iDotMatrix-HomeAssistant/compare/v2.8.0...v2.9.0) (2026-04-07)
 
 
