@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.9.2](https://github.com/d0ugal/iDotMatrix-HomeAssistant/compare/v2.9.1...v2.9.2) (2026-04-21)
+
+
+### Bug Fixes
+
+* relax pinned requirements to allow compatible versions ([a401fe7](https://github.com/d0ugal/iDotMatrix-HomeAssistant/commit/a401fe7e06c743be6aeacbf396425354ca4d33f9))
+
 ## [2.9.1](https://github.com/d0ugal/iDotMatrix-HomeAssistant/compare/v2.9.0...v2.9.1) (2026-04-18)
 
 
