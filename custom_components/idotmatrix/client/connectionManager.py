@@ -93,7 +93,11 @@ class ConnectionManager(metaclass=SingletonMeta):
                 if device:
                     self.logging.info(f"Connecting to {device.name} ({device.address})")
                     self.client = await establish_connection(
-                        BleakClient, device, self.address, max_attempts=3
+                        BleakClient,
+                        device,
+                        self.address,
+                        disconnected_callback=self._on_disconnect,
+                        max_attempts=3,
                     )
                 else:
                     # If device is not found in HA cache after polling, we cannot connect reliably.
@@ -111,6 +115,11 @@ class ConnectionManager(metaclass=SingletonMeta):
                 self.client = None
         else:
             self.logging.error("device address is not set.")
+
+    def _on_disconnect(self, client: BleakClient) -> None:
+        """Called by bleak when the BLE connection drops unexpectedly."""
+        self.logging.warning("BLE connection to %s dropped", self.address)
+        self.client = None
 
     async def disconnect(self) -> None:
         if self.client and self.client.is_connected:
