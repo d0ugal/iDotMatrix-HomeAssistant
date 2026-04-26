@@ -119,19 +119,59 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
         # Running stream task (if any)
         self._stream_task: asyncio.Task | None = None
 
+        # Guards against scheduling multiple concurrent reconnect+resync tasks
+        self._resync_pending: bool = False
+
     # ------------------------------------------------------------------
     # DataUpdateCoordinator
 
     async def _async_update_data(self) -> dict:
-        """Poll BLE connection status."""
+        """Poll BLE connection status; trigger re-sync when device reappears."""
+        connected = False
         try:
             from .client.connectionManager import ConnectionManager
 
             cm = ConnectionManager()
             connected = cm.client is not None and cm.client.is_connected
+
+            if not connected and cm.address and not self._resync_pending:
+                from homeassistant.components import bluetooth
+
+                device = bluetooth.async_ble_device_from_address(
+                    self.hass, cm.address, connectable=True
+                )
+                if device:
+                    _LOGGER.info(
+                        "Device %s is advertising but not connected — scheduling reconnect",
+                        cm.address,
+                    )
+                    self._resync_pending = True
+                    self.hass.async_create_task(self._reconnect_and_resync())
         except Exception:
             connected = False
         return {"connected": connected}
+
+    async def _reconnect_and_resync(self) -> None:
+        """Reconnect to device and re-apply current screen state."""
+        try:
+            from .client.connectionManager import ConnectionManager
+
+            cm = ConnectionManager()
+            await cm.connect()
+            if not (cm.client and cm.client.is_connected):
+                _LOGGER.warning("Re-sync: reconnect attempt failed")
+                return
+            _LOGGER.info("Re-sync: reconnected — pushing screen_on=%s", self.screen_on)
+            if self.screen_on:
+                await self._replay_default()
+            else:
+                from .client.modules.common import Common
+
+                await Common().screenOff()
+        except Exception as exc:
+            _LOGGER.warning("Re-sync after reconnect failed: %s", exc)
+        finally:
+            self._resync_pending = False
 
     # ------------------------------------------------------------------
     # Persistence
