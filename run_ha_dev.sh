@@ -4,11 +4,13 @@ set -e  # Fail on error
 if [ ! -d "ha_venv" ]; then
     echo "Creating Home Assistant venv using Python 3.12..."
     python3.12 -m venv ha_venv
+    # shellcheck source=/dev/null
     source ha_venv/bin/activate
-    
+
     echo "Installing Home Assistant..."
     pip install homeassistant colorlog
 else
+    # shellcheck source=/dev/null
     source ha_venv/bin/activate
 fi
 
@@ -61,7 +63,7 @@ if command -v lsof >/dev/null 2>&1; then
     PIDS=$(lsof -tiTCP:${PORT} -sTCP:LISTEN || true)
     if [ -n "$PIDS" ]; then
         echo "Stopping processes on port ${PORT}: ${PIDS}"
-        kill $PIDS || true
+        kill "$PIDS" || true
     fi
 fi
 
