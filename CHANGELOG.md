@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.9.4](https://github.com/d0ugal/iDotMatrix-HomeAssistant/compare/v2.9.3...v2.9.4) (2026-04-26)
+
+
+### Bug Fixes
+
+* resolve shellcheck warnings in run_ha_dev.sh ([4859302](https://github.com/d0ugal/iDotMatrix-HomeAssistant/commit/48593021f2d4bf485fa9888873a0ff07e8e18448))
+
 ## [2.9.3](https://github.com/d0ugal/iDotMatrix-HomeAssistant/compare/v2.9.2...v2.9.3) (2026-04-26)
 
 
