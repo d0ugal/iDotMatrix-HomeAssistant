@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.9.3](https://github.com/d0ugal/iDotMatrix-HomeAssistant/compare/v2.9.2...v2.9.3) (2026-04-26)
+
+
+### Bug Fixes
+
+* re-sync screen state after BLE reconnection ([4935fa6](https://github.com/d0ugal/iDotMatrix-HomeAssistant/commit/4935fa6a7452ca7d235e937fb13756a69e171b00))
+
 ## [2.9.2](https://github.com/d0ugal/iDotMatrix-HomeAssistant/compare/v2.9.1...v2.9.2) (2026-04-21)
 
 
