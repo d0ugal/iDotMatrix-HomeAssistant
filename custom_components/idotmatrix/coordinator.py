@@ -40,9 +40,7 @@ def _crop_and_resize(img: PilImage.Image, size: int) -> PilImage.Image:
     m = min(w, h)
     left = (w - m) // 2
     top = (h - m) // 2
-    return img.crop((left, top, left + m, top + m)).resize(
-        (size, size), PilImage.LANCZOS
-    )
+    return img.crop((left, top, left + m, top + m)).resize((size, size), PilImage.LANCZOS)
 
 
 def _compute_moon_attrs(lat: str, lon: str, elev: int) -> dict:
@@ -264,9 +262,7 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
         if not ok:
             # GATT errors can leave the client in a stale connected state.
             # Force a fresh connection and retry once.
-            _LOGGER.warning(
-                "GIF upload failed, forcing reconnect and retrying: %s", gif_path
-            )
+            _LOGGER.warning("GIF upload failed, forcing reconnect and retrying: %s", gif_path)
             conn = ConnectionManager()
             try:
                 await conn.disconnect()
@@ -312,9 +308,7 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
         if not ok:
             return
 
-        moon_attrs = await self.hass.async_add_executor_job(
-            _compute_moon_attrs, lat, lon, elev
-        )
+        moon_attrs = await self.hass.async_add_executor_job(_compute_moon_attrs, lat, lon, elev)
 
         if set_default and not display_for:
             self._default_mode = DISPLAY_MODE_MOON
@@ -354,15 +348,11 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
         entity_picture = state.attributes.get("entity_picture")
 
         if not entity_picture and not track and not artist:
-            _LOGGER.debug(
-                "display_now_playing: skipping %s — no artwork or metadata", entity_id
-            )
+            _LOGGER.debug("display_now_playing: skipping %s — no artwork or metadata", entity_id)
             return
 
         cache_dir = self._gif_cache_dir()
-        cache_key = hashlib.md5(
-            f"{track}|{artist}|{entity_picture or ''}".encode()
-        ).hexdigest()
+        cache_key = hashlib.md5(f"{track}|{artist}|{entity_picture or ''}".encode()).hexdigest()
         gif_path = os.path.join(cache_dir, f"{cache_key}.gif")
 
         if not os.path.exists(gif_path):
@@ -375,18 +365,14 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
                         if entity_picture.startswith("http")
                         else f"http://localhost:8123{entity_picture}"
                     )
-                    async with session.get(
-                        url, timeout=aiohttp.ClientTimeout(total=10)
-                    ) as resp:
+                    async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
                         if resp.status == 200:
                             raw = await resp.read()
                             img = await self.hass.async_add_executor_job(
                                 lambda: (
                                     PilImage.open(io.BytesIO(raw))
                                     .convert("RGB")
-                                    .resize(
-                                        (SCREEN_SIZE, SCREEN_SIZE), PilImage.LANCZOS
-                                    )
+                                    .resize((SCREEN_SIZE, SCREEN_SIZE), PilImage.LANCZOS)
                                 )
                             )
                 except Exception as exc:
@@ -491,16 +477,10 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
                         entity_id,
                     )
                     return
-                url = (
-                    picture
-                    if picture.startswith("http")
-                    else f"http://localhost:8123{picture}"
-                )
+                url = picture if picture.startswith("http") else f"http://localhost:8123{picture}"
                 session = async_get_clientsession(self.hass)
                 try:
-                    async with session.get(
-                        url, timeout=aiohttp.ClientTimeout(total=10)
-                    ) as resp:
+                    async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
                         if resp.status != 200:
                             _LOGGER.error(
                                 "display_image: image entity fetch failed: %s",
@@ -578,13 +558,9 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
                         frames, durations = [], []
                         try:
                             while True:
-                                frame = _crop_and_resize(
-                                    src.copy().convert("RGB"), SCREEN_SIZE
-                                )
+                                frame = _crop_and_resize(src.copy().convert("RGB"), SCREEN_SIZE)
                                 frames.append(frame)
-                                durations.append(
-                                    src.info.get("duration", default_delay)
-                                )
+                                durations.append(src.info.get("duration", default_delay))
                                 if not is_anim:
                                     break
                                 src.seek(src.tell() + 1)
@@ -760,9 +736,7 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
         await self._mark_updated(
             DISPLAY_MODE_STREAM, {"entity_id": entity_id, "stream_for": stream_for}
         )
-        self._stream_task = self.hass.async_create_task(
-            self._run_stream(entity_id, stream_for)
-        )
+        self._stream_task = self.hass.async_create_task(self._run_stream(entity_id, stream_for))
 
     async def _run_stream(self, entity_id: str, stream_for: float) -> None:
         """Inner loop for do_display_stream — runs as a background task."""
@@ -780,9 +754,7 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
                 except asyncio.CancelledError:
                     raise
                 except Exception as exc:
-                    _LOGGER.warning(
-                        "display_stream: snapshot error for %s: %s", entity_id, exc
-                    )
+                    _LOGGER.warning("display_stream: snapshot error for %s: %s", entity_id, exc)
                     await asyncio.sleep(1)
                     continue
 

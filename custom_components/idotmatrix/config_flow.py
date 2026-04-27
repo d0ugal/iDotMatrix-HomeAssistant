@@ -21,9 +21,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     VERSION = 1
 
-    async def async_step_user(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         """Handle the initial step."""
         if user_input is not None:
             address = user_input[CONF_MAC]
@@ -47,18 +45,14 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         schema = vol.Schema(
             {
-                vol.Required(CONF_MAC): (
-                    vol.In(list(discovered.keys())) if discovered else str
-                ),
+                vol.Required(CONF_MAC): (vol.In(list(discovered.keys())) if discovered else str),
                 vol.Optional(CONF_NAME, default=DEFAULT_NAME): str,
             }
         )
 
         return self.async_show_form(step_id="user", data_schema=schema)
 
-    async def async_step_bluetooth(
-        self, discovery_info: BluetoothServiceInfoBleak
-    ) -> FlowResult:
+    async def async_step_bluetooth(self, discovery_info: BluetoothServiceInfoBleak) -> FlowResult:
         """Handle bluetooth discovery."""
         await self.async_set_unique_id(discovery_info.address)
         self._abort_if_unique_id_configured()
