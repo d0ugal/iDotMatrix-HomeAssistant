@@ -70,8 +70,8 @@ class IDotMatrixLight(CoordinatorEntity[IDotMatrixCoordinator], LightEntity):
         if brightness is not None:
             await self.coordinator.do_set_brightness(brightness)
 
-        # Replay the default display when switching the screen back on
-        if was_off:
+        # Replay when turning on (was off, or explicit turn_on with no other args)
+        if was_off or not kwargs:
             await self.coordinator._replay_default()
 
     async def async_turn_off(self, **kwargs) -> None:

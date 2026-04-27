@@ -28,6 +28,7 @@ class ConnectionManager(metaclass=SingletonMeta):
         self.address: str | None = None
         self.client: BleakClient | None = None
         self.hass = None
+        self._intentional_disconnect: bool = False
 
     def set_hass(self, hass):
         """Set Home Assistant instance for proxy support."""
@@ -117,13 +118,20 @@ class ConnectionManager(metaclass=SingletonMeta):
             self.logging.error("device address is not set.")
 
     def _on_disconnect(self, client: BleakClient) -> None:
-        """Called by bleak when the BLE connection drops unexpectedly."""
+        """Called by bleak when the BLE connection drops."""
+        if self._intentional_disconnect:
+            return
         self.logging.warning("BLE connection to %s dropped", self.address)
         self.client = None
 
     async def disconnect(self) -> None:
         if self.client and self.client.is_connected:
-            await self.client.disconnect()
+            self._intentional_disconnect = True
+            try:
+                await self.client.disconnect()
+            finally:
+                self._intentional_disconnect = False
+                self.client = None
             self.logging.info(f"disconnected from {self.address}")
 
     # Match the Android app's BLE write size (MTU 517 - ATT overhead = 509)
