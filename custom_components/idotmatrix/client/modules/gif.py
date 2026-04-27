@@ -25,7 +25,9 @@ class Gif:
         with open(file_path, "rb") as file:
             return file.read()
 
-    def _splitIntoChunks(self, data: bytes | bytearray, chunk_size: int) -> list[bytearray]:
+    def _splitIntoChunks(
+        self, data: bytes | bytearray, chunk_size: int
+    ) -> list[bytearray]:
         """Split the data into chunks of specified size.
 
         Args:
@@ -35,7 +37,9 @@ class Gif:
         Returns:
             List[bytearray]: returns list with chunks of given data input
         """
-        return [bytearray(data[i : i + chunk_size]) for i in range(0, len(data), chunk_size)]
+        return [
+            bytearray(data[i : i + chunk_size]) for i in range(0, len(data), chunk_size)
+        ]
 
     def _createPayloads(
         self,
@@ -140,7 +144,9 @@ class Gif:
                     while True:
                         frame = img.copy().convert("RGB")
                         if frame.size != (pixel_size, pixel_size):
-                            frame = frame.resize((pixel_size, pixel_size), PilImage.NEAREST)
+                            frame = frame.resize(
+                                (pixel_size, pixel_size), PilImage.NEAREST
+                            )
                         frames_rgb.append(frame)
                         img.seek(img.tell() + 1)
                 except EOFError:
@@ -164,7 +170,9 @@ class Gif:
                     disposal=2,
                 )
                 gif_buffer.seek(0)
-                return self._createPayloads(gif_buffer.getvalue(), index=index, interval=interval)
+                return self._createPayloads(
+                    gif_buffer.getvalue(), index=index, interval=interval
+                )
         except BaseException as error:
             self.logging.error(f"could not process gif: {error}")
             return None
@@ -250,7 +258,11 @@ class Gif:
             return False
 
     async def uploadBatch(
-        self, file_paths: list[str], pixel_size: int = 32, interval: int = 5, raw: bool = False
+        self,
+        file_paths: list[str],
+        pixel_size: int = 32,
+        interval: int = 5,
+        raw: bool = False,
     ) -> bool:
         """Upload multiple GIFs as a batch using the device's batch protocol.
 
@@ -324,7 +336,9 @@ class Gif:
                 if i < count - 1:
                     await asyncio.sleep(0.15)
 
-            self.logging.debug(f"Batch upload complete: {count} GIFs, interval={interval}s")
+            self.logging.debug(
+                f"Batch upload complete: {count} GIFs, interval={interval}s"
+            )
             return True
 
         except BaseException as error:
