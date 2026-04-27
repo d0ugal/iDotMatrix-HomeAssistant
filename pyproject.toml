@@ -1,6 +1,6 @@
 [project]
 name = "idotmatrix-homeassistant"
-version = "2.9.4"
+version = "2.9.5"
 
 [tool.ruff]
 target-version = "py312"

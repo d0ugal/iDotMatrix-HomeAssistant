@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.9.5](https://github.com/d0ugal/iDotMatrix-HomeAssistant/compare/v2.9.4...v2.9.5) (2026-04-27)
+
+
+### Bug Fixes
+
+* correct screen_on tracking and persistence in iDotMatrix ([f4230cc](https://github.com/d0ugal/iDotMatrix-HomeAssistant/commit/f4230ccb019dfb1a19bed23c89ee7488afe7fadb))
+
 ## [2.9.4](https://github.com/d0ugal/iDotMatrix-HomeAssistant/compare/v2.9.3...v2.9.4) (2026-04-26)
 
 
