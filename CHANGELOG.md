@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.10.0](https://github.com/d0ugal/iDotMatrix-HomeAssistant/compare/v2.9.5...v2.10.0) (2026-05-03)
+
+
+### Features
+
+* add url parameter to display_image service ([8a1f378](https://github.com/d0ugal/iDotMatrix-HomeAssistant/commit/8a1f378038f70648d2097f8fd5f089a7076bf06c))
+
 ## [2.9.5](https://github.com/d0ugal/iDotMatrix-HomeAssistant/compare/v2.9.4...v2.9.5) (2026-04-27)
 
 
