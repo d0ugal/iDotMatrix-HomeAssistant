@@ -30,9 +30,7 @@ async def async_setup_entry(
 class _IDotMatrixSensorBase(CoordinatorEntity[IDotMatrixCoordinator], SensorEntity):
     _attr_has_entity_name = True
 
-    def __init__(
-        self, coordinator: IDotMatrixCoordinator, entry: ConfigEntry, key: str
-    ) -> None:
+    def __init__(self, coordinator: IDotMatrixCoordinator, entry: ConfigEntry, key: str) -> None:
         super().__init__(coordinator)
         mac = entry.data[CONF_MAC]
         self._attr_unique_id = f"{mac}_{key}"
