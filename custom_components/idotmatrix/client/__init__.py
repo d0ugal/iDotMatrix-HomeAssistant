@@ -10,7 +10,9 @@ from .modules.common import Common
 from .modules.gif import Gif
 
 __author__ = "Kalle Minkner, Jon-Mailes Graeffe"
-__credits__ = "everyone who thankfully helped with the reverse-engineering. You are awesome!"
+__credits__ = (
+    "everyone who thankfully helped with the reverse-engineering. You are awesome!"
+)
 __all__ = [
     "Common",
     "ConnectionManager",

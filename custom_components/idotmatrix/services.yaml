@@ -39,20 +39,27 @@ display_image:
   fields:
     path:
       name: Path
-      description: Absolute path to a PNG, JPG, or GIF file. Mutually exclusive with entity_id.
+      description: Absolute path to a PNG, JPG, or GIF file. Mutually exclusive with entity_id and url.
       required: false
       example: /config/www/doorbell.gif
       selector:
         text:
     entity_id:
       name: Camera or image entity
-      description: A camera or image entity to snapshot and display. Mutually exclusive with path.
+      description: A camera or image entity to snapshot and display. Mutually exclusive with path and url.
       required: false
       selector:
         entity:
           domain:
             - camera
             - image
+    url:
+      name: URL
+      description: A remote HTTP/HTTPS image URL to fetch and display. Mutually exclusive with path and entity_id. Not cached.
+      required: false
+      example: "https://example.com/bird.jpg"
+      selector:
+        text:
     display_for:
       name: Display for
       description: Revert to the previous default after this many seconds.
