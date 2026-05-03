@@ -35,6 +35,8 @@ _SCHEMA_DISPLAY_IMAGE = vol.Schema(
         vol.Exclusive("entity_id", "source"): cv.entity_id,
         vol.Exclusive("url", "source"): cv.url,
         vol.Optional("display_for"): vol.Coerce(float),
+        vol.Optional("line1"): vol.All(cv.string, vol.Length(max=MAX_CHARS)),
+        vol.Optional("line2"): vol.All(cv.string, vol.Length(max=MAX_CHARS)),
     }
 )
 _SCHEMA_DISPLAY_EMOJI = vol.Schema(
@@ -100,6 +102,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 entity_id=call.data.get("entity_id"),
                 url=call.data.get("url"),
                 display_for=display_for,
+                line1=call.data.get("line1"),
+                line2=call.data.get("line2"),
             )
 
     async def _display_emoji(call) -> None:
