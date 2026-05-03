@@ -34,6 +34,18 @@ _LOGGER = logging.getLogger(__name__)
 SCREEN_SIZE = 64
 
 
+def _overlay_gif(gif_bytes: bytes, line1: str, line2: str) -> bytes:
+    """Apply now-playing text overlay to a single-frame GIF."""
+    from tottie.overlay import apply_now_playing_overlay
+
+    with PilImage.open(io.BytesIO(gif_bytes)) as src:
+        frame = src.convert("RGB")
+    apply_now_playing_overlay(frame, line1, line2)
+    buf = io.BytesIO()
+    frame.quantize(colors=256).save(buf, format="GIF", loop=0, disposal=2)
+    return buf.getvalue()
+
+
 def _crop_and_resize(img: PilImage.Image, size: int) -> PilImage.Image:
     """Centre-crop to square then resize to size×size."""
     w, h = img.size
@@ -455,11 +467,14 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
         url: str | None = None,
         display_for: float | None = None,
         set_default: bool = True,
+        line1: str | None = None,
+        line2: str | None = None,
     ) -> None:
         """Crop/resize any image or GIF to 64×64 and upload.
 
         Supply one of `path` (local file), `entity_id` (camera/image entity),
         or `url` (remote HTTP/HTTPS URL). Snapshots and URLs are not cached.
+        Optional line1/line2 overlay text is rendered over the image before upload.
         """
         self.cancel_stream()
         cache_dir = self._gif_cache_dir()
@@ -523,6 +538,10 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
                 return buf.getvalue()
 
             gif_data = await self.hass.async_add_executor_job(_process_camera)
+            if line1 or line2:
+                gif_data = await self.hass.async_add_executor_job(
+                    _overlay_gif, gif_data, line1 or "", line2 or ""
+                )
             with tempfile.NamedTemporaryFile(suffix=".gif", delete=False) as tmp:
                 tmp.write(gif_data)
                 tmp_path = tmp.name
@@ -570,6 +589,10 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
                 return buf.getvalue()
 
             gif_data = await self.hass.async_add_executor_job(_process_url)
+            if line1 or line2:
+                gif_data = await self.hass.async_add_executor_job(
+                    _overlay_gif, gif_data, line1 or "", line2 or ""
+                )
             with tempfile.NamedTemporaryFile(suffix=".gif", delete=False) as tmp:
                 tmp.write(gif_data)
                 tmp_path = tmp.name
@@ -640,7 +663,24 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
 
                 await self.hass.async_add_executor_job(_process)
 
-            if not await self._upload_gif(gif_path):
+            if line1 or line2:
+
+                def _read_overlay() -> bytes:
+                    with open(gif_path, "rb") as f:
+                        data = f.read()
+                    return _overlay_gif(data, line1 or "", line2 or "")
+
+                overlay_data = await self.hass.async_add_executor_job(_read_overlay)
+                with tempfile.NamedTemporaryFile(suffix=".gif", delete=False) as tmp:
+                    tmp.write(overlay_data)
+                    tmp_path = tmp.name
+                try:
+                    if not await self._upload_gif(tmp_path):
+                        return
+                finally:
+                    if os.path.exists(tmp_path):
+                        os.remove(tmp_path)
+            elif not await self._upload_gif(gif_path):
                 return
 
             attrs = {"path": path}
