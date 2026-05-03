@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.11.0](https://github.com/d0ugal/iDotMatrix-HomeAssistant/compare/v2.10.0...v2.11.0) (2026-05-03)
+
+
+### Features
+
+* add line1/line2 text overlay support to display_image service ([9706507](https://github.com/d0ugal/iDotMatrix-HomeAssistant/commit/9706507d3cfb2f3d394dce4b896b434cb1a6318b))
+
 ## [2.10.0](https://github.com/d0ugal/iDotMatrix-HomeAssistant/compare/v2.9.5...v2.10.0) (2026-05-03)
 
 
