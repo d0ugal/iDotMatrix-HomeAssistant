@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.12.0](https://github.com/d0ugal/iDotMatrix-HomeAssistant/compare/v2.11.0...v2.12.0) (2026-05-04)
+
+
+### Features
+
+* add position parameter to display_image text overlay ([2218a47](https://github.com/d0ugal/iDotMatrix-HomeAssistant/commit/2218a47e4fc20a528d2fe538408ad082a711d6cb))
+
 ## [2.11.0](https://github.com/d0ugal/iDotMatrix-HomeAssistant/compare/v2.10.0...v2.11.0) (2026-05-03)
 
 
