@@ -46,13 +46,11 @@ def _overlay_gif(gif_bytes: bytes, line1: str, line2: str, position: str = "top"
     return buf.getvalue()
 
 
-def _crop_and_resize(img: PilImage.Image, size: int) -> PilImage.Image:
-    """Centre-crop to square then resize to size×size."""
-    w, h = img.size
-    m = min(w, h)
-    left = (w - m) // 2
-    top = (h - m) // 2
-    return img.crop((left, top, left + m, top + m)).resize((size, size), PilImage.LANCZOS)
+def _crop_and_resize(img: PilImage.Image, size: int, fit: str = "cover") -> PilImage.Image:
+    """Fit to size×size; thin wrapper over tottie.crop_and_resize."""
+    from tottie.image import crop_and_resize
+
+    return crop_and_resize(img, size=size, fit=fit)
 
 
 def _compute_moon_attrs(lat: str, lon: str, elev: int) -> dict:
@@ -470,6 +468,7 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
         line1: str | None = None,
         line2: str | None = None,
         position: str = "top",
+        fit: str = "cover",
     ) -> None:
         """Crop/resize any image or GIF to 64×64 and upload.
 
@@ -477,6 +476,8 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
         or `url` (remote HTTP/HTTPS URL). Snapshots and URLs are not cached.
         Optional line1/line2 overlay text is rendered over the image before upload.
         position controls where the text appears: "top" (default) or "bottom".
+        fit controls how the image is fitted: "cover" (default, crop-to-fill)
+        or "contain" (letterbox with black bars).
         """
         self.cancel_stream()
         cache_dir = self._gif_cache_dir()
@@ -533,7 +534,7 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
 
             def _process_camera() -> bytes:
                 img = PilImage.open(io.BytesIO(raw)).convert("RGB")
-                frame = _crop_and_resize(img, SCREEN_SIZE)
+                frame = _crop_and_resize(img, SCREEN_SIZE, fit=fit)
                 palette = frame.quantize(colors=256)
                 buf = io.BytesIO()
                 palette.save(buf, format="GIF", loop=0, disposal=2)
@@ -584,7 +585,7 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
 
             def _process_url() -> bytes:
                 img = PilImage.open(io.BytesIO(raw)).convert("RGB")
-                frame = _crop_and_resize(img, SCREEN_SIZE)
+                frame = _crop_and_resize(img, SCREEN_SIZE, fit=fit)
                 palette = frame.quantize(colors=256)
                 buf = io.BytesIO()
                 palette.save(buf, format="GIF", loop=0, disposal=2)
@@ -623,7 +624,7 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
                 return
 
             stat = os.stat(path)
-            cache_key = hashlib.md5(f"{path}:{stat.st_mtime}".encode()).hexdigest()
+            cache_key = hashlib.md5(f"{path}:{stat.st_mtime}:{fit}".encode()).hexdigest()
             gif_path = os.path.join(cache_dir, f"{cache_key}.gif")
 
             if not os.path.exists(gif_path):
@@ -635,7 +636,9 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
                         frames, durations = [], []
                         try:
                             while True:
-                                frame = _crop_and_resize(src.copy().convert("RGB"), SCREEN_SIZE)
+                                frame = _crop_and_resize(
+                                    src.copy().convert("RGB"), SCREEN_SIZE, fit=fit
+                                )
                                 frames.append(frame)
                                 durations.append(src.info.get("duration", default_delay))
                                 if not is_anim:

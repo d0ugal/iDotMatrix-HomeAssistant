@@ -85,6 +85,16 @@ display_image:
           options:
             - "top"
             - "bottom"
+    fit:
+      name: Fit
+      description: How to fit the image to 64×64. "cover" (default) crops to fill; "contain" letterboxes the whole image with black bars on the short axis.
+      required: false
+      default: "cover"
+      selector:
+        select:
+          options:
+            - "cover"
+            - "contain"
     display_for:
       name: Display for
       description: Revert to the previous default after this many seconds.
