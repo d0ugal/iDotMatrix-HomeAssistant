@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.13.0](https://github.com/d0ugal/iDotMatrix-HomeAssistant/compare/v2.12.0...v2.13.0) (2026-05-18)
+
+
+### Features
+
+* add fit param to display_image service ([7f2b130](https://github.com/d0ugal/iDotMatrix-HomeAssistant/commit/7f2b130b82f5c70fa8792697c6823d5017972fac))
+
 ## [2.12.0](https://github.com/d0ugal/iDotMatrix-HomeAssistant/compare/v2.11.0...v2.12.0) (2026-05-04)
 
 
