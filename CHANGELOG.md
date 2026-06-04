@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.13.1](https://github.com/d0ugal/iDotMatrix-HomeAssistant/compare/v2.13.0...v2.13.1) (2026-06-04)
+
+
+### Bug Fixes
+
+* loosen bleak pins to allow HA-bundled bleak 3.x ([6f5692d](https://github.com/d0ugal/iDotMatrix-HomeAssistant/commit/6f5692dc957c1ba814dd8b15dfb4b19ffe73c149))
+
 ## [2.13.0](https://github.com/d0ugal/iDotMatrix-HomeAssistant/compare/v2.12.0...v2.13.0) (2026-05-18)
 
 
