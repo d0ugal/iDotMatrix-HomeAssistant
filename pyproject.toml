@@ -7,21 +7,18 @@ target-version = "py312"
 line-length = 100
 
 [tool.ruff.lint]
-select = [
-    "E",   # pycodestyle errors
-    "F",   # pyflakes (unused imports, undefined names, etc.)
-    "I",   # isort
-    "UP",  # pyupgrade
-    "RUF", # ruff-specific
-]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 ignore = [
-    "E501",   # line too long — handled by formatter
+    "E501",   # line length is enforced by the formatter
     "RUF002", # × in docstrings is intentional (64×64)
-    "RUF012", # mutable class attrs are idiomatic in HA entities
+    "RUF012", # mutable class attributes are idiomatic in HA entities
 ]
 
 [tool.ruff.lint.isort]
 known-first-party = ["custom_components.idotmatrix"]
+
+[tool.ruff.format]
+quote-style = "double"
 
 [tool.pyright]
 pythonVersion = "3.12"
