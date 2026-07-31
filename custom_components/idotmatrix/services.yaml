@@ -11,6 +11,16 @@ display_moon:
           min: 1
           mode: box
           unit_of_measurement: seconds
+    tint:
+      name: Tint
+      description: >-
+        Recolour the moon, so its colour can carry meaning - golden when it is
+        actually visible outside, say. White becomes this colour and the black
+        background is left alone. Omit for the default greyscale render.
+      required: false
+      example: "[255, 200, 80]"
+      selector:
+        color_rgb:
 
 display_now_playing:
   name: Display now playing
