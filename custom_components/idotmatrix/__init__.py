@@ -21,6 +21,10 @@ CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 _SCHEMA_DISPLAY_MOON = vol.Schema(
     {
         vol.Optional("display_for"): vol.Coerce(float),
+        vol.Optional("tint"): vol.All(
+            [vol.All(vol.Coerce(int), vol.Range(min=0, max=255))],
+            vol.Length(min=3, max=3),
+        ),
     }
 )
 _SCHEMA_DISPLAY_NOW_PLAYING = vol.Schema(
@@ -88,8 +92,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     async def _display_moon(call) -> None:
         display_for = call.data.get("display_for")
+        tint = call.data.get("tint")
         for coord in _coordinators():
-            await coord.do_display_moon(display_for=display_for)
+            await coord.do_display_moon(
+                display_for=display_for,
+                tint=tuple(tint) if tint else None,
+            )
 
     async def _display_now_playing(call) -> None:
         display_for = call.data.get("display_for")

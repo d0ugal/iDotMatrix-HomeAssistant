@@ -28,6 +28,7 @@ from .const import (
     DOMAIN,
     STORAGE_VERSION,
 )
+from .imaging import tint_image
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -294,8 +295,14 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
         self,
         display_for: float | None = None,
         set_default: bool = True,
+        tint: tuple[int, int, int] | None = None,
     ) -> None:
-        """Render moon phase and upload as GIF."""
+        """Render moon phase and upload as GIF.
+
+        `tint` recolours the render, so callers can signal something about the
+        moon through its colour - a golden moon for one that is actually
+        visible, say.
+        """
         self.cancel_stream()
         from tottie.moon import render_image
 
@@ -308,6 +315,8 @@ class IDotMatrixCoordinator(DataUpdateCoordinator):
 
         def _render_gif() -> None:
             img = render_image(lat, lon, elev)
+            if tint is not None:
+                img = tint_image(img, tint)
             gif_img = img.quantize(colors=256)
             buf = io.BytesIO()
             gif_img.save(buf, format="GIF", loop=0, disposal=2)
