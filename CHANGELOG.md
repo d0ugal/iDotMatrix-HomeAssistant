@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.14.0](https://github.com/d0ugal/iDotMatrix-HomeAssistant/compare/v2.13.1...v2.14.0) (2026-07-31)
+
+
+### Features
+
+* let display_moon tint the render ([2bd5264](https://github.com/d0ugal/iDotMatrix-HomeAssistant/commit/2bd5264dfb80e9d9efb9b95e3bfd343dce5f2f8b))
+
 ## [2.13.1](https://github.com/d0ugal/iDotMatrix-HomeAssistant/compare/v2.13.0...v2.13.1) (2026-06-04)
 
 
